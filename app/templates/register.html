@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - OpsHub Central Portal</title>
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+        
+        :root {
+            --bg-dark: #071511;
+            --accent-green: #30ba78;
+            --accent-cyan: #06b6d4;
+            --accent-amber: #eab308;
+        }
+        
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: var(--bg-dark);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(48, 186, 120, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(6, 182, 212, 0.12) 0px, transparent 50%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .ambient-glow {
+            position: absolute;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(48, 186, 120, 0.2) 0%, transparent 70%);
+            top: 25%;
+            left: 20%;
+            pointer-events: none;
+            z-index: 0;
+            filter: blur(40px);
+        }
+
+        .login-container {
+            z-index: 1;
+            width: 100%;
+            max-width: 460px;
+            padding: 20px;
+        }
+
+        .glass-login-card {
+            background: rgba(15, 28, 24, 0.75);
+            backdrop-filter: blur(16px) saturate(180%);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+
+        .glass-login-card:hover {
+            border-color: rgba(48, 186, 120, 0.4);
+            box-shadow: 0 15px 45px rgba(48, 186, 120, 0.15);
+        }
+
+        .form-control-login {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #ffffff !important;
+            padding: 12px 16px;
+            border-radius: 10px;
+            font-size: 0.95rem;
+            transition: all 0.25s;
+        }
+
+        .form-control-login:focus {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: var(--accent-green);
+            box-shadow: 0 0 12px rgba(48, 186, 120, 0.25);
+            outline: none;
+        }
+
+        .form-control-login::placeholder {
+            color: rgba(255, 255, 255, 0.3);
+        }
+
+        .btn-login {
+            background: linear-gradient(135deg, var(--accent-green) 0%, #22c55e 100%);
+            color: #ffffff;
+            border: none;
+            padding: 14px;
+            font-weight: 700;
+            border-radius: 10px;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(48, 186, 120, 0.35);
+        }
+
+        .btn-login:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(48, 186, 120, 0.5);
+        }
+
+        .input-icon-wrapper {
+            position: relative;
+        }
+
+        .input-icon-wrapper i {
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 1.1rem;
+        }
+
+        .input-icon-wrapper input {
+            padding-left: 48px;
+        }
+
+        .login-alert {
+            background: rgba(239, 68, 68, 0.12);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 10px;
+            color: #fca5a5;
+            padding: 14px 18px;
+            font-size: 0.9rem;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .success-alert {
+            background: rgba(234, 179, 8, 0.08);
+            border: 1px solid rgba(234, 179, 8, 0.3);
+            border-radius: 14px;
+            color: #fef08a;
+            padding: 24px;
+            font-size: 0.95rem;
+            margin-bottom: 24px;
+            line-height: 1.6;
+            box-shadow: 0 4px 20px rgba(234, 179, 8, 0.1);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="ambient-glow"></div>
+    <canvas id="fireflies" class="position-absolute top-0 start-0 w-100 h-100" style="z-index: 0; pointer-events: none; opacity: 0.85;"></canvas>
+
+    <div class="login-container">
+        <!-- Logo Header -->
+        <div class="text-center mb-4">
+            <img src="{{ url_for('static', filename='img/cloud4c_logo.svg') }}" alt="Cloud4C Logo" style="height: 52px;" class="mb-2">
+            <div class="text-muted small mt-2" style="color: rgba(255, 255, 255, 0.5) !important;">OpsHub Management Engine</div>
+        </div>
+
+        <!-- Registration Card -->
+        <div class="glass-login-card">
+            <h4 class="text-white fw-bold mb-4 text-center">Create Account</h4>
+
+            {% if error %}
+            <div class="login-alert">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+                <div>{{ error }}</div>
+            </div>
+            {% endif %}
+
+            {% if success %}
+            <div class="success-alert text-center">
+                <i class="bi bi-clock-history d-block mb-3 text-warning" style="font-size: 2.2rem;"></i>
+                <div class="fw-semibold">{{ success }}</div>
+            </div>
+            <div class="text-center">
+                <a href="{{ url_for('main.login') }}" class="btn btn-outline-light w-100 py-3" style="border-radius: 10px;">
+                    <i class="bi bi-arrow-left me-2"></i> Back to Login
+                </a>
+            </div>
+            {% else %}
+            <form action="{{ url_for('main.register') }}" method="POST" autocomplete="off">
+                <!-- Username -->
+                <div class="mb-3">
+                    <label class="form-label text-white-50 small fw-semibold mb-2">Username</label>
+                    <div class="input-icon-wrapper">
+                        <i class="bi bi-person-fill"></i>
+                        <input type="text" name="username" class="form-control form-control-login" placeholder="Choose a username..." required autofocus>
+                    </div>
+                </div>
+
+                <!-- Email -->
+                <div class="mb-3">
+                    <label class="form-label text-white-50 small fw-semibold mb-2">Email Address</label>
+                    <div class="input-icon-wrapper">
+                        <i class="bi bi-envelope-fill"></i>
+                        <input type="email" name="email" class="form-control form-control-login" placeholder="name@company.com" required>
+                    </div>
+                </div>
+
+                <!-- Password -->
+                <div class="mb-4">
+                    <label class="form-label text-white-50 small fw-semibold mb-2">Password</label>
+                    <div class="input-icon-wrapper">
+                        <i class="bi bi-shield-lock-fill"></i>
+                        <input type="password" name="password" class="form-control form-control-login" placeholder="Create secure password..." required>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-login w-100 mb-3">
+                    <i class="bi bi-person-plus-fill me-2"></i> Register Account
+                </button>
+                
+                <div class="text-center text-white-50 small">
+                    Already have an account? <a href="{{ url_for('main.login') }}" class="text-success fw-semibold text-decoration-none">Sign In</a>
+                </div>
+            </form>
+            {% endif %}
+        </div>
+
+        <div class="text-center mt-4">
+            <p class="text-white-50 extra-small mb-0" style="font-size: 0.72rem; opacity: 0.5;">© 2026 Cloud4C. All rights reserved.</p>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const canvas = document.getElementById('fireflies');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        let width = window.innerWidth;
+        let height = window.innerHeight;
+        canvas.width = width;
+        canvas.height = height;
+
+        window.addEventListener('resize', () => {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+        });
+
+        class Firefly {
+            constructor() {
+                this.reset();
+                this.x = Math.random() * width;
+                this.y = Math.random() * height;
+            }
+
+            reset() {
+                this.x = Math.random() * width;
+                this.y = Math.random() > 0.5 ? -10 : height + 10;
+                this.size = Math.random() * 2 + 1;
+                this.speedX = (Math.random() - 0.5) * 0.6;
+                this.speedY = (Math.random() - 0.5) * 0.6 - 0.2;
+                this.opacity = Math.random() * 0.8 + 0.2;
+                this.opacitySpeed = Math.random() * 0.02 + 0.005;
+                this.opacityDir = Math.random() > 0.5 ? 1 : -1;
+                
+                const colors = ['rgba(48, 186, 120, ', 'rgba(234, 179, 8, ', 'rgba(6, 182, 212, '];
+                this.colorBase = colors[Math.floor(Math.random() * colors.length)];
+                this.angle = Math.random() * Math.PI * 2;
+                this.wobbleSpeed = Math.random() * 0.02 + 0.01;
+            }
+
+            update() {
+                this.angle += this.wobbleSpeed;
+                this.x += this.speedX + Math.sin(this.angle) * 0.2;
+                this.y += this.speedY + Math.cos(this.angle) * 0.1;
+
+                this.opacity += this.opacitySpeed * this.opacityDir;
+                if (this.opacity > 0.9) {
+                    this.opacity = 0.9;
+                    this.opacityDir = -1;
+                } else if (this.opacity < 0.1) {
+                    this.opacity = 0.1;
+                    this.opacityDir = 1;
+                }
+
+                if (this.x < -20 || this.x > width + 20 || this.y < -20 || this.y > height + 20) {
+                    this.reset();
+                    this.x = Math.random() * width;
+                    this.y = Math.random() > 0.5 ? height + 10 : -10;
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.globalAlpha = this.opacity;
+                
+                ctx.shadowBlur = this.size * 3.5;
+                ctx.shadowColor = this.colorBase.replace('rgba', 'rgb').split(',').slice(0, 3).join(',') + ')';
+                ctx.fillStyle = this.colorBase + '1)';
+                
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        const firefliesCount = 40;
+        const fireflies = [];
+        for (let i = 0; i < firefliesCount; i++) {
+            fireflies.push(new Firefly());
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, width, height);
+            
+            fireflies.forEach(f => {
+                f.update();
+                f.draw();
+            });
+
+            requestAnimationFrame(animate);
+        }
+        animate();
+    });
+    </script>
+</body>
+</html>

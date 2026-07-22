@@ -1,0 +1,11 @@
+[
+    {
+        "id": 1,
+        "name": "Hyderabad POD",
+        "jump_host": "192.168.209.135",
+        "jump_user": "root",
+        "jump_password": "root",
+        "ssh_port": 22,
+        "description": "Development & Operation Jump Host POD"
+    }
+]

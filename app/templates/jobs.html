@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+
+{% block title %}Jobs & Execution History{% endblock %}
+
+{% block content %}
+
+<!-- Header -->
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+        <h3 class="fw-bold text-white mb-1">Execution History & Active Jobs</h3>
+        <p class="text-muted small mb-0">Audit trail of playbook runs, scheduled jobs, and execution task logs.</p>
+    </div>
+    <a href="{{ url_for('main.execute') }}" class="btn btn-glow-primary">
+        <i class="bi bi-play-fill me-1"></i> New Job
+    </a>
+</div>
+
+<!-- Job Filter & Search Bar -->
+<div class="glass-card p-3 mb-4">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+        <!-- Job Filter Tabs -->
+        <ul class="nav nav-tabs nav-tabs-dark border-bottom-0 mb-0" id="jobFilterTabs" style="gap: 4px;">
+            <li class="nav-item">
+                <a class="nav-link active" href="#" onclick="filterJobs('ALL', event, this)"><i class="bi bi-list-task me-1"></i> All Jobs <span class="badge bg-secondary ms-1" id="count-all">0</span></a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#" onclick="filterJobs('RUNNING', event, this)"><i class="bi bi-arrow-repeat me-1"></i> Running <span class="badge bg-warning ms-1 text-dark" id="count-running">0</span></a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#" onclick="filterJobs('SUCCESS', event, this)"><i class="bi bi-check-circle me-1"></i> Success <span class="badge bg-success ms-1" id="count-success">0</span></a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#" onclick="filterJobs('FAILED', event, this)"><i class="bi bi-x-circle me-1"></i> Failed <span class="badge bg-danger ms-1" id="count-failed">0</span></a>
+            </li>
+        </ul>
+
+        <div class="position-relative" style="width: 280px;">
+            <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
+            <input type="text" class="form-control form-control-dark form-control-sm ps-5" placeholder="Search jobs..." id="jobSearch" onkeyup="searchJobs()">
+        </div>
+    </div>
+</div>
+
+<!-- Job History Table -->
+<div class="glass-card overflow-hidden">
+    <div class="table-responsive">
+        <table class="table table-custom mb-0">
+            <thead>
+                <tr id="header-row">
+                    <th onclick="sortJobsTable(0, 'string')" style="cursor: pointer; user-select: none;">Job ID <i class="bi bi-arrow-down-up ms-1 text-white-50 small"></i></th>
+                    <th onclick="sortJobsTable(1, 'string')" style="cursor: pointer; user-select: none;">Playbook Name <i class="bi bi-arrow-down-up ms-1 text-white-50 small"></i></th>
+                    <th onclick="sortJobsTable(2, 'string')" style="cursor: pointer; user-select: none;">Target POD / Host <i class="bi bi-arrow-down-up ms-1 text-white-50 small"></i></th>
+                    <th onclick="sortJobsTable(3, 'string')" style="cursor: pointer; user-select: none;">Status <i class="bi bi-arrow-down-up ms-1 text-white-50 small"></i></th>
+                    <th onclick="sortJobsTable(4, 'duration')" style="cursor: pointer; user-select: none;">Duration <i class="bi bi-arrow-down-up ms-1 text-white-50 small"></i></th>
+                    <th onclick="sortJobsTable(5, 'string')" style="cursor: pointer; user-select: none;">Triggered By <i class="bi bi-arrow-down-up ms-1 text-white-50 small"></i></th>
+                    <th onclick="sortJobsTable(6, 'date')" style="cursor: pointer; user-select: none;">Timestamp <i class="bi bi-arrow-down-up ms-1 text-white-50 small"></i></th>
+                    <th class="text-end">Logs</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in jobs %}
+                <tr class="job-row" data-status="{{ job.status | upper }}">
+                    <td>
+                        <span class="font-monospace fw-bold text-cyan">{{ job.id }}</span>
+                    </td>
+                    <td>
+                        <div class="d-flex align-items-center gap-2">
+                            <i class="bi bi-journal-code text-muted"></i>
+                            <span class="fw-semibold text-white">{{ job.playbook }}</span>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="text-muted small">{{ job.pod }}</span>
+                    </td>
+                    <td>
+                        {% if job.status == 'SUCCESS' %}
+                        <span class="badge badge-emerald"><i class="bi bi-check-lg me-1"></i> SUCCESS</span>
+                        {% elif job.status == 'RUNNING' %}
+                        <span class="badge badge-amber"><i class="bi bi-arrow-repeat me-1"></i> RUNNING</span>
+                        {% else %}
+                        <span class="badge badge-rose"><i class="bi bi-x-lg me-1"></i> FAILED</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="font-monospace text-muted small">{{ job.duration }}</span>
+                    </td>
+                    <td>
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="brand-icon rounded-circle" style="width: 24px; height: 24px; font-size: 11px;">
+                                <i class="bi bi-person"></i>
+                            </div>
+                            <span class="text-white-50 small">{{ job.user }}</span>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="text-muted extra-small" style="font-size: 0.78rem;">{{ job.time }}</span>
+                    </td>
+                    <td class="text-end">
+                        {% if job.filename %}
+                        <a href="{{ url_for('main.logs', file=job.filename) }}" class="btn btn-glass btn-sm text-secondary">
+                            <i class="bi bi-terminal me-1"></i> Console
+                        </a>
+                        {% else %}
+                        <span class="text-muted small">-</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentActiveFilter = 'ALL';
+let currentSortCol = -1;
+let currentSortAsc = true;
+
+document.addEventListener('DOMContentLoaded', () => {
+    updateJobCounts();
+});
+
+function updateJobCounts() {
+    const rows = document.querySelectorAll('.job-row');
+    let allCount = rows.length;
+    let runningCount = 0;
+    let successCount = 0;
+    let failedCount = 0;
+    
+    rows.forEach(row => {
+        const status = row.getAttribute('data-status');
+        if (status === 'RUNNING') runningCount++;
+        else if (status === 'SUCCESS') successCount++;
+        else if (status === 'FAILED') failedCount++;
+    });
+    
+    document.getElementById('count-all').innerText = allCount;
+    document.getElementById('count-running').innerText = runningCount;
+    document.getElementById('count-success').innerText = successCount;
+    document.getElementById('count-failed').innerText = failedCount;
+}
+
+function filterJobs(filterVal, event, linkEl) {
+    if (event) event.preventDefault();
+    
+    currentActiveFilter = filterVal;
+    
+    // Toggle active link
+    const tabs = document.querySelectorAll('#jobFilterTabs .nav-link');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    linkEl.classList.add('active');
+    
+    applyFilters();
+}
+
+function searchJobs() {
+    applyFilters();
+}
+
+function applyFilters() {
+    const query = document.getElementById('jobSearch').value.toLowerCase();
+    const rows = document.querySelectorAll('.job-row');
+    
+    rows.forEach(row => {
+        const status = row.getAttribute('data-status');
+        const text = row.innerText.toLowerCase();
+        
+        const matchesStatus = (currentActiveFilter === 'ALL' || status === currentActiveFilter);
+        const matchesSearch = text.includes(query);
+        
+        if (matchesStatus && matchesSearch) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+function sortJobsTable(colIdx, type) {
+    const tableBody = document.querySelector('.table-custom tbody');
+    const rows = Array.from(tableBody.querySelectorAll('.job-row'));
+    
+    if (currentSortCol === colIdx) {
+        currentSortAsc = !currentSortAsc;
+    } else {
+        currentSortCol = colIdx;
+        currentSortAsc = true;
+    }
+    
+    // Update header icons
+    const headers = document.querySelectorAll('#header-row th');
+    headers.forEach((th, idx) => {
+        const icon = th.querySelector('i');
+        if (!icon) return;
+        if (idx === colIdx) {
+            icon.className = currentSortAsc ? 'bi bi-caret-up-fill ms-1 text-cyan' : 'bi bi-caret-down-fill ms-1 text-cyan';
+        } else {
+            icon.className = 'bi bi-arrow-down-up ms-1 text-white-50 small';
+        }
+    });
+    
+    rows.sort((rowA, rowB) => {
+        let valA = rowA.cells[colIdx].innerText.trim();
+        let valB = rowB.cells[colIdx].innerText.trim();
+        
+        if (type === 'duration') {
+            valA = parseDuration(valA);
+            valB = parseDuration(valB);
+        } else if (type === 'date') {
+            valA = valA === 'N/A' ? 0 : new Date(valA).getTime() || 0;
+            valB = valB === 'N/A' ? 0 : new Date(valB).getTime() || 0;
+        } else {
+            valA = valA.toLowerCase();
+            valB = valB.toLowerCase();
+        }
+        
+        if (valA < valB) return currentSortAsc ? -1 : 1;
+        if (valA > valB) return currentSortAsc ? 1 : -1;
+        return 0;
+    });
+    
+    rows.forEach(row => tableBody.appendChild(row));
+}
+
+function parseDuration(durStr) {
+    if (!durStr || durStr === '-') return 0;
+    const match = durStr.match(/(\d+)m\s+(\d+)s/);
+    if (match) {
+        const mins = parseInt(match[1]);
+        const secs = parseInt(match[2]);
+        return mins * 60 + secs;
+    }
+    return 0;
+}
+</script>
+{% endblock %}

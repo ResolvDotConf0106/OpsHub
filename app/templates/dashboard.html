@@ -1,0 +1,292 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+
+<div class="position-relative w-100" style="min-height: calc(100vh - 120px);">
+    <!-- Canvas for falling stars -->
+    <canvas id="starfield" class="position-absolute top-0 start-0 w-100 h-100" style="z-index: 0; pointer-events: none; opacity: 0.8;"></canvas>
+
+    <div class="position-relative" style="z-index: 1;">
+        <!-- Page Title & Header -->
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+        <h3 class="fw-bold text-white mb-1">Operations Dashboard</h3>
+        <p class="text-muted small mb-0">Overview of active PODs, virtual machines, and automation jobs.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('main.execute') }}" class="btn btn-glow-primary">
+            <i class="bi bi-play-fill me-1"></i> New Execution
+        </a>
+    </div>
+</div>
+
+<!-- Metrics Cards Row -->
+<div class="row g-4 mb-4">
+    <div class="col-xl-4 col-md-6">
+        <div class="glass-card metric-card h-100">
+            <div class="d-flex align-items-center justify-content-between">
+                <div>
+                    <span class="text-muted small fw-semibold text-uppercase" style="letter-spacing: 0.5px;">Active PODs</span>
+                    <h2 class="fw-bold text-white mb-0 mt-1">{{ metrics.total_pods }}</h2>
+                    <span class="badge badge-emerald mt-2"><i class="bi bi-check-circle me-1"></i> 100% Operational</span>
+                </div>
+                <div class="metric-icon-wrapper metric-icon-cyan">
+                    <i class="bi bi-hdd-rack-fill"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-4 col-md-6">
+        <div class="glass-card metric-card h-100">
+            <div class="d-flex align-items-center justify-content-between">
+                <div>
+                    <span class="text-muted small fw-semibold text-uppercase" style="letter-spacing: 0.5px;">Total Managed VMs</span>
+                    <h2 class="fw-bold text-white mb-0 mt-1">{{ metrics.total_vms }}</h2>
+                </div>
+                <div class="metric-icon-wrapper metric-icon-violet">
+                    <i class="bi bi-cpu-fill"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-4 col-md-6">
+        <div class="glass-card metric-card h-100">
+            <div class="d-flex align-items-center justify-content-between">
+                <div>
+                    <span class="text-muted small fw-semibold text-uppercase" style="letter-spacing: 0.5px;">Running Jobs</span>
+                    <h2 class="fw-bold text-white mb-0 mt-1">{{ metrics.running_jobs }}</h2>
+                    <span class="badge badge-amber mt-2"><i class="bi bi-arrow-repeat me-1"></i> In Execution</span>
+                </div>
+                <div class="metric-icon-wrapper metric-icon-amber">
+                    <i class="bi bi-play-circle-fill"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Main Section: POD Grid + Live Activity Feed -->
+<div class="row g-4">
+    <!-- Available PODs Column -->
+    <div class="col-lg-8">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <h5 class="fw-bold text-white mb-0">Managed Data Center PODs</h5>
+            <span class="text-muted small">Updated 1 min ago</span>
+        </div>
+
+        <div class="row g-3">
+            {% for pod in pods %}
+            <div class="col-md-6">
+                <div class="glass-card pod-card p-4 h-100 d-flex flex-column justify-content-between">
+                    <div>
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="pulse-dot online"></span>
+                                <h5 class="fw-bold text-white mb-0">{{ pod.name }}</h5>
+                            </div>
+                            <span class="badge badge-cyan">POD #0{{ pod.id }}</span>
+                        </div>
+
+                        <p class="text-muted small mb-3">{{ pod.description }}</p>
+
+                        <div class="ssh-chip mb-3">
+                            <div>
+                                <i class="bi bi-terminal me-2 text-muted"></i>
+                                <span>{{ pod.ssh_user }}@{{ pod.jump_host }}</span>
+                            </div>
+                            <span class="badge bg-secondary opacity-50 font-monospace">Port {{ pod.ssh_port }}</span>
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2 pt-2 border-top border-secondary opacity-75">
+                        <a href="{{ url_for('main.execute') }}" class="btn btn-glow-primary flex-grow-1 text-center py-2 btn-sm">
+                            <i class="bi bi-play-circle me-1"></i> Execute Task
+                        </a>
+                        <button class="btn btn-glass px-3 py-2 btn-sm" title="Copy SSH String" onclick="navigator.clipboard.writeText('ssh {{ pod.ssh_user }}@{{ pod.jump_host }}')">
+                            <i class="bi bi-copy"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Live Activity Feed Column -->
+    <div class="col-lg-4">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <h5 class="fw-bold text-white mb-0">Recent Activity Log</h5>
+            <a href="{{ url_for('main.logs') }}" class="text-muted small text-decoration-none">View All</a>
+        </div>
+
+        <div class="glass-card p-3">
+            <div class="d-flex flex-column gap-3">
+                {% for act in activities %}
+                <div class="p-3 rounded-3" style="background: #f8fafc; border: 1px solid #e2e8f0;">
+                    <div class="d-flex align-items-center justify-content-between mb-1">
+                        {% if act.type == 'SUCCESS' %}
+                        <span class="badge badge-emerald extra-small"><i class="bi bi-check-lg me-1"></i> Success</span>
+                        {% elif act.type == 'RUNNING' %}
+                        <span class="badge badge-amber extra-small"><i class="bi bi-arrow-repeat me-1"></i> Running</span>
+                        {% else %}
+                        <span class="badge badge-cyan extra-small"><i class="bi bi-info-circle me-1"></i> Info</span>
+                        {% endif %}
+                        <span class="text-secondary extra-small" style="font-size: 0.75rem;">{{ act.time }}</span>
+                    </div>
+                    <div class="fw-semibold small mt-2 font-monospace" style="color: #0f172a;">{{ act.event }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const canvas = document.getElementById('starfield');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    
+    let width = canvas.parentElement.clientWidth;
+    let height = canvas.parentElement.clientHeight;
+    canvas.width = width;
+    canvas.height = height;
+
+    // Handle resize
+    window.addEventListener('resize', () => {
+        const parent = canvas.parentElement;
+        width = parent.clientWidth;
+        height = parent.clientHeight;
+        canvas.width = width;
+        canvas.height = height;
+    });
+
+    class TwinkleStar {
+        constructor() {
+            this.reset();
+            this.opacity = Math.random();
+        }
+        reset() {
+            this.x = Math.random() * width;
+            this.y = Math.random() * height;
+            this.size = Math.random() * 1.5 + 0.5;
+            this.speed = Math.random() * 0.015 + 0.005;
+            this.opacityDir = Math.random() > 0.5 ? 1 : -1;
+            
+            // Slate blue, emerald, cyan, or custom warm tones
+            const colors = ['#30ba78', '#00b060', '#94a3b8', '#3b82f6', '#ff6026'];
+            this.color = colors[Math.floor(Math.random() * colors.length)];
+        }
+        update() {
+            this.opacity += this.speed * this.opacityDir;
+            if (this.opacity > 0.8) {
+                this.opacity = 0.8;
+                this.opacityDir = -1;
+            } else if (this.opacity < 0.1) {
+                this.opacity = 0.1;
+                this.opacityDir = 1;
+            }
+        }
+        draw() {
+            ctx.fillStyle = this.color;
+            ctx.globalAlpha = this.opacity;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    class FallingStar {
+        constructor() {
+            this.reset();
+            this.y = Math.random() * height;
+        }
+        reset() {
+            this.x = Math.random() * (width * 0.8);
+            this.y = -50;
+            this.length = Math.random() * 120 + 80;
+            this.speed = Math.random() * 6 + 4;
+            this.angle = (40 + Math.random() * 10) * Math.PI / 180; // diagonal down-right
+            this.opacity = Math.random() * 0.5 + 0.3;
+            
+            const brandColors = [
+                { base: '48, 186, 120', glow: '#30ba78' }, // SUSE Green
+                { base: '0, 176, 96', glow: '#00b060' },   // SUSE Cyan
+                { base: '255, 96, 38', glow: '#ff6026' },   // SUSE Orange
+                { base: '59, 130, 246', glow: '#3b82f6' }   // Electric Blue
+            ];
+            const colorSet = brandColors[Math.floor(Math.random() * brandColors.length)];
+            this.colorBase = colorSet.base;
+            this.glowColor = colorSet.glow;
+        }
+        update() {
+            this.x += Math.cos(this.angle) * this.speed;
+            this.y += Math.sin(this.angle) * this.speed;
+            if (this.y > height + 100 || this.x > width + 100) {
+                this.reset();
+            }
+        }
+        draw() {
+            const x2 = this.x - Math.cos(this.angle) * this.length;
+            const y2 = this.y - Math.sin(this.angle) * this.length;
+
+            ctx.save();
+            ctx.globalAlpha = this.opacity;
+            
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = this.glowColor;
+
+            const grad = ctx.createLinearGradient(this.x, this.y, x2, y2);
+            grad.addColorStop(0, `rgba(${this.colorBase}, 1)`);
+            grad.addColorStop(0.3, `rgba(${this.colorBase}, 0.4)`);
+            grad.addColorStop(1, `rgba(${this.colorBase}, 0)`);
+
+            ctx.strokeStyle = grad;
+            ctx.lineWidth = 2.0;
+            ctx.beginPath();
+            ctx.moveTo(this.x, this.y);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+            
+            ctx.restore();
+        }
+    }
+
+    const twinkleStars = [];
+    const fallingStars = [];
+
+    for (let i = 0; i < 45; i++) {
+        twinkleStars.push(new TwinkleStar());
+    }
+    for (let i = 0; i < 4; i++) {
+        fallingStars.push(new FallingStar());
+    }
+
+    function animate() {
+        ctx.clearRect(0, 0, width, height);
+
+        twinkleStars.forEach(s => {
+            s.update();
+            s.draw();
+        });
+
+        fallingStars.forEach(s => {
+            s.update();
+            s.draw();
+        });
+
+        requestAnimationFrame(animate);
+    }
+    animate();
+});
+</script>
+{% endblock %}

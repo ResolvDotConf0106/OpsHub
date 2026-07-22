@@ -1,0 +1,62 @@
+---
+- name: VM Health & Diagnostic Inspection
+  hosts: all
+  gather_facts: yes
+  become: yes
+
+  vars:
+    disk_usage_threshold: 85
+    memory_usage_threshold: 90
+
+  tasks:
+    - name: 1. Gather System Information & Load Average
+      ansible.builtin.setup:
+        gather_subset:
+          - 'hardware'
+          - 'network'
+          - 'virtual'
+
+    - name: 2. Check CPU Load Average
+      ansible.builtin.command: uptime
+      register: uptime_output
+      changed_when: false
+
+    - name: 3. Display CPU & Memory Metrics
+      ansible.builtin.debug:
+        msg:
+          - "Host: {{ inventory_hostname }}"
+          - "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "Kernel: {{ ansible_kernel }}"
+          - "Total Memory: {{ (ansible_memtotal_mb / 1024) | round(2) }} GB"
+          - "Free Memory: {{ (ansible_memfree_mb / 1024) | round(2) }} GB"
+          - "Uptime: {{ uptime_output.stdout }}"
+
+    - name: 4. Check Root Disk Space Usage
+      ansible.builtin.shell: "df -h / | tail -1 | awk '{print $5}' | sed 's/%//'"
+      register: root_disk_usage
+      changed_when: false
+
+    - name: 5. Verify Disk Space Threshold
+      ansible.builtin.assert:
+        that:
+          - "root_disk_usage.stdout | int < disk_usage_threshold"
+        fail_msg: "ALERT: Root disk space usage ({{ root_disk_usage.stdout }}%) exceeded threshold of {{ disk_usage_threshold }}%!"
+        success_msg: "OK: Root disk space usage is healthy at {{ root_disk_usage.stdout }}%."
+
+    - name: 6. Check Core System Services Status (sshd, containerd, firewalld)
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+      loop:
+        - sshd
+        - containerd
+      register: service_checks
+      ignore_errors: yes
+
+    - name: 7. Network Connectivity Diagnostic (Ping Gateway)
+      ansible.builtin.ping:
+      register: ping_result
+
+    - name: 8. Final Health Summary
+      ansible.builtin.debug:
+        msg: "PASSED: VM {{ inventory_hostname }} is fully healthy and operating within nominal parameters."

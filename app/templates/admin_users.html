@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+
+{% block title %}User Management{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+        <h3 class="fw-bold text-white mb-1">User Management</h3>
+        <p class="text-muted small mb-0">Approve registrations, revoke access, and manage user accounts.</p>
+    </div>
+</div>
+
+<!-- Alert banner for notification toast -->
+<div id="statusToast" class="alert alert-success d-none align-items-center gap-2 mb-4" role="alert" style="border-radius: 10px; font-size: 0.9rem;">
+    <i class="bi bi-info-circle-fill"></i>
+    <span id="statusToastMsg">Action completed successfully.</span>
+</div>
+
+<div class="glass-card p-4">
+    <div class="d-flex align-items-center justify-content-between mb-4 border-bottom pb-3">
+        <h5 class="fw-bold mb-0" style="color: #0f172a;"><i class="bi bi-people me-2 text-success"></i>Registered Users & Requests</h5>
+        <span class="badge bg-dark-green text-white px-2 py-2 small fw-semibold" id="requestsCountBadge">
+            {% set pending_count = users | selectattr('status', 'equalto', 'Pending') | list | length %}
+            {{ pending_count }} Pending Requests
+        </span>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr style="font-size: 0.82rem; font-weight: 700; color: #475569; border-bottom: 2px solid #e2e8f0;">
+                    <th class="ps-3">Username</th>
+                    <th>Email Address</th>
+                    <th>System Role</th>
+                    <th>Account Status</th>
+                    <th class="text-end pe-3">Control Actions</th>
+                </tr>
+            </thead>
+            <tbody id="usersTableBody">
+                {% for u in users %}
+                <tr id="user-row-{{ u.id }}" style="border-bottom: 1px solid #f1f5f9;">
+                    <td class="ps-3">
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="brand-icon rounded-circle bg-light text-secondary d-flex align-items-center justify-content-center fw-bold" style="width: 32px; height: 32px; font-size: 0.8rem;">
+                                {{ u.username[:2] | upper }}
+                            </div>
+                            <div class="fw-semibold text-secondary" style="font-size: 0.9rem;">{{ u.username }}</div>
+                        </div>
+                    </td>
+                    <td class="text-secondary small font-monospace">{{ u.email or 'N/A' }}</td>
+                    <td>
+                        {% if u.role == 'Admin' %}
+                        <span class="badge bg-dark text-white px-2 py-1" style="font-size: 0.72rem;">Admin</span>
+                        {% else %}
+                        <span class="badge bg-secondary text-white px-2 py-1" style="font-size: 0.72rem;">User</span>
+                        {% endif %}
+                    </td>
+                    <td id="status-col-{{ u.id }}">
+                        {% if u.status == 'Approved' %}
+                        <span class="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1" style="font-size: 0.74rem;"><i class="bi bi-patch-check-fill me-1"></i>Approved</span>
+                        {% elif u.status == 'Pending' %}
+                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2.5 py-1" style="font-size: 0.74rem;"><i class="bi bi-clock-fill me-1"></i>Pending Approval</span>
+                        {% elif u.status == 'Rejected' %}
+                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2.5 py-1" style="font-size: 0.74rem;"><i class="bi bi-x-circle-fill me-1"></i>Rejected</span>
+                        {% else %}
+                        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2.5 py-1" style="font-size: 0.74rem;"><i class="bi bi-slash-circle-fill me-1"></i>Disabled</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end pe-3" id="actions-col-{{ u.id }}">
+                        {% if u.username == 'admin' %}
+                        <span class="text-muted extra-small font-monospace">System Owner</span>
+                        {% else %}
+                        <div class="d-inline-flex gap-1">
+                            {% if u.status == 'Pending' %}
+                            <button onclick="handleUserAction({{ u.id }}, 'approve')" class="btn btn-sm btn-success d-flex align-items-center justify-content-center gap-1 py-1 px-2.5" style="font-size: 0.76rem;">
+                                <i class="bi bi-check-lg"></i> Approve
+                            </button>
+                            <button onclick="handleUserAction({{ u.id }}, 'reject')" class="btn btn-sm btn-outline-danger d-flex align-items-center justify-content-center gap-1 py-1 px-2.5" style="font-size: 0.76rem;">
+                                <i class="bi bi-x-lg"></i> Reject
+                            </button>
+                            {% else %}
+                                {% if u.status == 'Approved' %}
+                                <button onclick="handleUserAction({{ u.id }}, 'disable')" class="btn btn-sm btn-outline-warning d-flex align-items-center justify-content-center gap-1 py-1 px-2.5" style="font-size: 0.76rem;" title="Disable User Account">
+                                    <i class="bi bi-slash-circle"></i> Revoke Access
+                                </button>
+                                {% else %}
+                                <button onclick="handleUserAction({{ u.id }}, 'approve')" class="btn btn-sm btn-outline-success d-flex align-items-center justify-content-center gap-1 py-1 px-2.5" style="font-size: 0.76rem;" title="Enable User Account">
+                                    <i class="bi bi-check-circle"></i> Enable Access
+                                </button>
+                                {% endif %}
+                                <button onclick="handleUserAction({{ u.id }}, 'delete')" class="btn btn-sm btn-outline-danger d-flex align-items-center justify-content-center py-1 px-2" style="font-size: 0.76rem;" title="Delete User Account">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function handleUserAction(userId, action) {
+    if (action === 'delete' && !confirm('Are you sure you want to permanently delete this user account?')) {
+        return;
+    }
+
+    const toast = document.getElementById('statusToast');
+    const toastMsg = document.getElementById('statusToastMsg');
+
+    fetch(`/api/admin/users/${userId}/action`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ action: action })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Update Toast
+            toastMsg.innerText = data.message;
+            toast.classList.remove('d-none');
+            toast.classList.add('d-flex');
+            
+            // Hide toast after 3.5s
+            setTimeout(() => {
+                toast.classList.remove('d-flex');
+                toast.classList.add('d-none');
+            }, 3500);
+
+            if (action === 'delete') {
+                // Remove row from table
+                const row = document.getElementById(`user-row-${userId}`);
+                if (row) row.remove();
+            } else {
+                // Update table elements dynamically
+                const statusCol = document.getElementById(`status-col-${userId}`);
+                const actionsCol = document.getElementById(`actions-col-${userId}`);
+                
+                let badgeHTML = '';
+                let actionsHTML = '';
+
+                if (action === 'approve') {
+                    badgeHTML = `<span class="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1" style="font-size: 0.74rem;"><i class="bi bi-patch-check-fill me-1"></i>Approved</span>`;
+                    actionsHTML = `
+                        <div class="d-inline-flex gap-1">
+                            <button onclick="handleUserAction(${userId}, 'disable')" class="btn btn-sm btn-outline-warning d-flex align-items-center justify-content-center gap-1 py-1 px-2.5" style="font-size: 0.76rem;" title="Disable User Account">
+                                <i class="bi bi-slash-circle"></i> Revoke Access
+                            </button>
+                            <button onclick="handleUserAction(${userId}, 'delete')" class="btn btn-sm btn-outline-danger d-flex align-items-center justify-content-center py-1 px-2" style="font-size: 0.76rem;" title="Delete User Account">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    `;
+                } else if (action === 'reject') {
+                    badgeHTML = `<span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2.5 py-1" style="font-size: 0.74rem;"><i class="bi bi-x-circle-fill me-1"></i>Rejected</span>`;
+                    actionsHTML = `
+                        <div class="d-inline-flex gap-1">
+                            <button onclick="handleUserAction(${userId}, 'approve')" class="btn btn-sm btn-outline-success d-flex align-items-center justify-content-center gap-1 py-1 px-2.5" style="font-size: 0.76rem;" title="Enable User Account">
+                                <i class="bi bi-check-circle"></i> Enable Access
+                            </button>
+                            <button onclick="handleUserAction(${userId}, 'delete')" class="btn btn-sm btn-outline-danger d-flex align-items-center justify-content-center py-1 px-2" style="font-size: 0.76rem;" title="Delete User Account">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    `;
+                } else if (action === 'disable') {
+                    badgeHTML = `<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2.5 py-1" style="font-size: 0.74rem;"><i class="bi bi-slash-circle-fill me-1"></i>Disabled</span>`;
+                    actionsHTML = `
+                        <div class="d-inline-flex gap-1">
+                            <button onclick="handleUserAction(${userId}, 'approve')" class="btn btn-sm btn-outline-success d-flex align-items-center justify-content-center gap-1 py-1 px-2.5" style="font-size: 0.76rem;" title="Enable User Account">
+                                <i class="bi bi-check-circle"></i> Enable Access
+                            </button>
+                            <button onclick="handleUserAction(${userId}, 'delete')" class="btn btn-sm btn-outline-danger d-flex align-items-center justify-content-center py-1 px-2" style="font-size: 0.76rem;" title="Delete User Account">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    `;
+                }
+
+                if (statusCol) statusCol.innerHTML = badgeHTML;
+                if (actionsCol) actionsCol.innerHTML = actionsHTML;
+            }
+            
+            // Re-calculate pending requests badge
+            recalculatePendingBadge();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error during action execution:', error);
+        alert('Network request failed.');
+    });
+}
+
+function recalculatePendingBadge() {
+    const badge = document.getElementById('requestsCountBadge');
+    if (badge) {
+        // Count rows that have pending status
+        const usersTable = document.getElementById('usersTableBody');
+        const rows = usersTable.getElementsByTagName('tr');
+        let pending = 0;
+        for (let i = 0; i < rows.length; i++) {
+            if (rows[i].innerHTML.includes('Pending Approval')) {
+                pending++;
+            }
+        }
+        badge.innerText = `${pending} Pending Requests`;
+    }
+}
+</script>
+{% endblock %}

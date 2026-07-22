@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block title %}Playbooks{% endblock %}
+
+{% block content %}
+
+<!-- Header -->
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+        <h3 class="fw-bold text-white mb-1">Approved Playbook Library</h3>
+        <p class="text-muted small mb-0">Validated automation playbooks available in the backend `playbooks/` repository.</p>
+    </div>
+    <span class="badge badge-emerald py-2 px-3"><i class="bi bi-shield-check me-1"></i> Backend Verified Only</span>
+</div>
+
+<!-- Playbook Grid -->
+<div class="row g-4">
+    {% for pb in playbooks %}
+    <div class="col-lg-6">
+        <div class="glass-card p-4 h-100 d-flex flex-column justify-content-between">
+            <div>
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="metric-icon-wrapper metric-icon-violet" style="width: 44px; height: 44px; font-size: 20px;">
+                            <i class="bi bi-journal-code"></i>
+                        </div>
+                        <div>
+                            <h5 class="fw-bold text-white mb-0">{{ pb.title }}</h5>
+                            <span class="font-monospace text-cyan small">{{ pb.filename }}</span>
+                        </div>
+                    </div>
+                    <span class="badge badge-violet extra-small">{{ pb.author }}</span>
+                </div>
+
+                <p class="text-muted small mb-3">{{ pb.description }}</p>
+
+                <!-- Tags -->
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    {% for tag in pb.tags %}
+                    <span class="badge badge-cyan" style="font-size: 0.7rem;"># {{ tag }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="pt-3 border-top border-secondary opacity-75 d-flex align-items-center justify-content-between">
+                <span class="text-muted extra-small" style="font-size: 0.78rem;">
+                    <i class="bi bi-folder-check me-1"></i> Repository Playbook
+                </span>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-glass btn-sm text-secondary" onclick="viewPlaybook('{{ pb.filename }}')">
+                        <i class="bi bi-eye me-1"></i> View Content
+                    </button>
+                    <a href="{{ url_for('main.execute') }}" class="btn btn-glow-primary btn-sm">
+                        <i class="bi bi-play-fill me-1"></i> Run Playbook
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Playbook Viewer Modal -->
+<div class="modal fade" id="playbookModal" tabindex="-1" aria-labelledby="playbookModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content text-white" style="background: #0f172a; border: 1px solid rgba(255,255,255,0.1); border-radius: 14px;">
+            <div class="modal-header border-0 py-3" style="background: rgba(255,255,255,0.03);">
+                <h5 class="modal-title fw-bold" id="playbookModalLabel"><i class="bi bi-journal-code me-2 text-violet"></i>Playbook Source View</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+                <pre id="playbookModalContent" class="text-light p-4 mb-0" style="max-height: 500px; overflow-y: auto; font-family: var(--font-mono); font-size: 0.85rem; line-height: 1.5; white-space: pre-wrap; background: #020617; border-bottom-left-radius: 14px; border-bottom-right-radius: 14px;"></pre>
+            </div>
+            <div class="modal-footer border-0 bg-dark py-2.5">
+                <button type="button" class="btn btn-secondary px-4 btn-sm" style="border-radius: 7px;" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let playbookModal = null;
+document.addEventListener('DOMContentLoaded', () => {
+    playbookModal = new bootstrap.Modal(document.getElementById('playbookModal'));
+});
+function viewPlaybook(filename) {
+    const container = document.getElementById('playbookModalContent');
+    container.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Loading playbook content...';
+    playbookModal.show();
+    fetch(`/api/playbooks/${filename}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                container.innerText = data.content;
+            } else {
+                container.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle-fill me-2"></i>Error: ${data.error}</span>`;
+            }
+        })
+        .catch(err => {
+            container.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle-fill me-2"></i>Network request failed.</span>`;
+        });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,1299 @@
+{% extends "base.html" %}
+
+{% block title %}Execution Engine{% endblock %}
+
+{% block content %}
+
+<!-- Title & Mode Tabs -->
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+        <h3 class="fw-bold text-white mb-1">OpsHub Execution Engine</h3>
+        <p class="text-muted small mb-0">Execute Ansible ad-hoc connectivity commands or playbooks routed through Jump Hosts.</p>
+    </div>
+</div>
+
+<!-- Ticket Reference Number Card -->
+<div class="glass-card p-3 mb-4 d-flex align-items-center justify-content-between" style="background: rgba(255,255,255,0.85); border-left: 4px solid var(--accent-suse-green); border-radius: 12px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.04);">
+    <div class="d-flex align-items-center gap-3">
+        <div class="brand-icon rounded-circle bg-success-subtle text-success d-flex align-items-center justify-content-center" style="width: 44px; height: 44px; font-size: 20px; background: rgba(48, 186, 120, 0.15);">
+            <i class="bi bi-ticket-perforated-fill"></i>
+        </div>
+        <div>
+            <h6 class="fw-bold mb-0" style="color: #0f172a;">Ticket Reference Code</h6>
+            <div class="text-muted extra-small" style="font-size: 0.76rem;">An active support/change ticket number is strictly mandatory for all operations.</div>
+        </div>
+    </div>
+    <div style="width: 280px;">
+        <input type="text" id="globalTicketNumber" class="form-control font-monospace fw-bold" style="border-radius: 9px; border-color: #cbd5e1; padding: 10px 14px; text-transform: uppercase;" placeholder="e.g. SR-981240">
+    </div>
+</div>
+
+<!-- Main Execution Tabs -->
+<ul class="nav nav-tabs nav-tabs-dark mb-4" id="execTabs" role="tablist">
+    <li class="nav-item">
+        <button class="nav-link active" id="adhoc-tab" data-bs-toggle="tab" data-bs-target="#adhoc-panel">
+            <i class="bi bi-terminal-fill me-2 text-cyan"></i>Ad-Hoc Commands (Verify Connectivity)
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" id="playbook-tab" data-bs-toggle="tab" data-bs-target="#playbook-panel">
+            <i class="bi bi-journal-code me-2 text-violet"></i>Playbook Execution
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" id="disk-tab" data-bs-toggle="tab" data-bs-target="#disk-panel">
+            <i class="bi bi-hdd-fill me-2 text-cyan"></i>File System Management
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" id="nfs-tab" data-bs-toggle="tab" data-bs-target="#nfs-panel">
+            <i class="bi bi-folder-symlink-fill me-2 text-violet"></i>NFS Configuration
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" id="telnet-tab" data-bs-toggle="tab" data-bs-target="#telnet-panel">
+            <i class="bi bi-activity me-2 text-emerald"></i>TCP Connectivity Check
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content" id="execTabsContent">
+    <!-- TAB 1: AD-HOC COMMANDS -->
+    <div class="tab-pane fade show active" id="adhoc-panel">
+        <div class="row g-4">
+            <!-- Form Panel -->
+            <div class="col-lg-5">
+                <div class="glass-card p-4">
+                    <h5 class="fw-bold text-white mb-3">
+                        <i class="bi bi-diagram-3 me-2 text-cyan"></i>Ad-Hoc Jump Host Runner
+                    </h5>
+
+                    <form id="adhocForm" onsubmit="handleAdhocSubmit(event)">
+                        <!-- 1. Select POD / Jump Host -->
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-semibold">1. Select Target POD</label>
+                            <select class="form-select form-select-dark font-monospace" id="adhocJumpHost" onchange="updateFlowJumpHost(this.value)" required>
+                                {% for pod in pods %}
+                                <option value="{{ pod.jump_host }}" selected>
+                                    {{ pod.name }} (Jump: {{ pod.jump_host }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- 2. Target End VM Mode -->
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-semibold">2. Target End VM Input Mode</label>
+                            <div class="d-flex gap-3 mb-2">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="targetMode" id="targetModeSingle" value="single" checked onchange="toggleTargetMode('single')">
+                                    <label class="form-check-label text-white small" for="targetModeSingle">
+                                        Manual Server IP(s)
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="targetMode" id="targetModeInventory" value="inventory" onchange="toggleTargetMode('inventory')">
+                                    <label class="form-check-label text-white small" for="targetModeInventory">
+                                        Ansible Inventory (.ini)
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Single / Multiple IP Input -->
+                            <div id="singleTargetWrapper">
+                                <input type="text" class="form-control form-control-dark font-monospace text-cyan" id="targetSingleIp" value="192.168.209.136" placeholder="e.g. 192.168.209.136 or 192.168.209.136, 192.168.209.140" oninput="updateFlowEndVm(this.value)">
+                                <span class="text-muted extra-small d-block mt-1">Single server IP or comma-separated server list</span>
+                            </div>
+
+                            <!-- Inventory .ini Select & Upload -->
+                            <div id="inventoryTargetWrapper" class="d-none">
+                                <select class="form-select form-select-dark mb-2" id="targetInventorySelect">
+                                    {% for inv in inventories %}
+                                    <option value="{{ inv.filename }}">{{ inv.filename }} ({{ (inv.size_bytes / 1024)|round(1) }} KB)</option>
+                                    {% endfor %}
+                                </select>
+
+                                <div class="d-flex gap-2">
+                                    <input type="file" class="form-control form-control-dark form-control-sm" id="inventoryFileInput" accept=".ini,.txt">
+                                    <button type="button" class="btn btn-glass btn-sm" onclick="uploadInventoryFile()">
+                                        <i class="bi bi-upload me-1"></i> Upload
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Target End VM Credentials -->
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label text-muted small fw-semibold">Target VM SSH User</label>
+                                <input type="text" class="form-control form-control-dark font-monospace text-cyan" id="adhocSshUser" value="root">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label text-muted small fw-semibold">Target VM Password</label>
+                                <input type="password" class="form-control form-control-dark font-monospace" id="adhocSshPass" placeholder="Prompt if empty">
+                            </div>
+                        </div>
+
+                        <!-- 3. Command Selection -->
+                        <div class="mb-4">
+                            <label class="form-label text-muted small fw-semibold">3. Select Ad-Hoc Command</label>
+                            <select class="form-select form-select-dark font-monospace" id="adhocCommand" onchange="onCommandChange(this.value)" required>
+                                <option value="ping">ping (Ansible Ping Test)</option>
+                                <option value="hostname">hostname (Print Hostname)</option>
+                                <option value="uptime" selected>uptime (System Uptime & Load)</option>
+                                <option value="df -h">df -h (Disk Space Usage)</option>
+                                <option value="free -m">free -m (Memory Usage)</option>
+                                <option value="cat /etc/os-release">cat /etc/os-release (OS Release Info)</option>
+                                <option value="custom">Custom Shell Command...</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3 d-none" id="customCommandWrapper">
+                            <label class="form-label text-muted small">Custom Command Shell String</label>
+                            <input type="text" class="form-control form-control-dark font-monospace" id="customCommandInput" placeholder="e.g. systemctl status containerd">
+                        </div>
+
+                        <!-- Submit Button -->
+                        <button type="submit" class="btn btn-glow-primary w-100 py-2" id="adhocRunBtn">
+                            <i class="bi bi-play-fill me-1"></i> Run Ad-Hoc Command
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Terminal Output Window -->
+            <div class="col-lg-7">
+                <div class="terminal-window h-100 d-flex flex-column">
+                    <div class="terminal-header">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="terminal-dots">
+                                <div class="terminal-dot dot-red"></div>
+                                <div class="terminal-dot dot-yellow"></div>
+                                <div class="terminal-dot dot-green"></div>
+                            </div>
+                            <span class="text-muted small font-monospace"><i class="bi bi-terminal me-1"></i> Real SSH ad-hoc stdout console</span>
+                        </div>
+                        <div id="adhocStatusBadge">
+                            <span class="badge badge-cyan">READY</span>
+                        </div>
+                    </div>
+
+                    <div class="terminal-body flex-grow-1" id="adhocTerminalOutput">
+                        <div class="text-muted font-monospace small">
+                            [OpsHub Central Engine Ready]<br>
+                            Central VM: 192.168.209.137<br>
+                            Select target End VM (e.g. 192.168.209.136), enter target VM credentials, then click "Run Ad-Hoc Command".
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 2: PLAYBOOK EXECUTION -->
+    <div class="tab-pane fade" id="playbook-panel">
+        <div class="row g-4">
+            <div class="col-lg-5">
+                <div class="glass-card p-4">
+                    <h5 class="fw-bold text-white mb-3">
+                        <i class="bi bi-journal-code me-2 text-violet"></i>Playbook Execution
+                    </h5>
+
+
+                    <form id="playbookForm" onsubmit="handlePlaybookSubmit(event)">
+                        <!-- Playbook Select -->
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-semibold">1. Select Approved Playbook</label>
+                            <select class="form-select form-select-dark" id="playbookSelect" required>
+                                {% for pb in playbooks %}
+                                <option value="{{ pb.file }}">{{ pb.name }} ({{ pb.file }})</option>
+                                {% endfor %}
+                            </select>
+                            <button type="button" class="btn btn-glass btn-sm mt-2 text-secondary" onclick="previewCurrentPlaybook()">
+                                <i class="bi bi-eye me-1"></i> Preview Selected Playbook
+                            </button>
+                        </div>
+
+                        <!-- Jump Host Select -->
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-semibold">2. Select Target POD</label>
+                            <select class="form-select form-select-dark font-monospace" id="pbJumpHost" onchange="const el=document.getElementById('pbFlowJumpHost'); if(el)el.innerText=this.value" required>
+                                {% for pod in pods %}
+                                <option value="{{ pod.jump_host }}" selected>
+                                    {{ pod.name }} (Jump: {{ pod.jump_host }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Target End VM Mode -->
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-semibold">3. Target End VM Input Mode</label>
+                            <div class="d-flex gap-3 mb-2">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="pbTargetMode" id="pbTargetModeSingle" value="single" checked onchange="togglePbTargetMode('single')">
+                                    <label class="form-check-label text-white small" for="pbTargetModeSingle">
+                                        Manual Server IP(s)
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="pbTargetMode" id="pbTargetModeInventory" value="inventory" onchange="togglePbTargetMode('inventory')">
+                                    <label class="form-check-label text-white small" for="pbTargetModeInventory">
+                                        Ansible Inventory (.ini)
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div id="pbSingleTargetWrapper">
+                                <input type="text" class="form-control form-control-dark font-monospace text-cyan" id="pbTargetSingleIp" value="192.168.209.136" placeholder="e.g. 192.168.209.136" oninput="const el=document.getElementById('pbFlowEndVm'); if(el)el.innerText=this.value">
+                            </div>
+
+                            <div id="pbInventoryTargetWrapper" class="d-none">
+                                <select class="form-select form-select-dark" id="pbTargetInventorySelect">
+                                    {% for inv in inventories %}
+                                    <option value="{{ inv.filename }}">{{ inv.filename }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Target VM Credentials -->
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label text-muted small fw-semibold">Target VM SSH User</label>
+                                <input type="text" class="form-control form-control-dark font-monospace text-cyan" id="pbSshUser" value="root">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label text-muted small fw-semibold">Target VM Password</label>
+                                <input type="password" class="form-control form-control-dark font-monospace" id="pbSshPass" placeholder="Prompt if empty">
+                            </div>
+                        </div>
+
+                        <!-- Extra Vars -->
+                        <div class="mb-4">
+                            <label class="form-label text-muted small fw-semibold">Extra Variables (JSON)</label>
+                            <textarea class="form-control form-control-dark font-monospace text-cyan" id="pbExtraVars" rows="2" placeholder='{"k8s_version": "1.30.0"}'></textarea>
+                        </div>
+
+                        <button type="submit" class="btn btn-glow-primary w-100 py-2" id="pbRunBtn">
+                            <i class="bi bi-play-fill me-1"></i> Start Playbook Execution
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Terminal Output Window -->
+            <div class="col-lg-7">
+                <div class="terminal-window h-100 d-flex flex-column">
+                    <div class="terminal-header">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="terminal-dots">
+                                <div class="terminal-dot dot-red"></div>
+                                <div class="terminal-dot dot-yellow"></div>
+                                <div class="terminal-dot dot-green"></div>
+                            </div>
+                            <span class="text-muted small font-monospace"><i class="bi bi-journal-code me-1"></i> ansible-playbook stdout</span>
+                        </div>
+                        <div id="pbStatusBadge">
+                            <span class="badge badge-cyan">IDLE</span>
+                        </div>
+                    </div>
+
+                    <div class="terminal-body flex-grow-1" id="pbTerminalOutput">
+                        <div class="text-muted font-monospace small">
+                            [Playbook Central Engine Ready]<br>
+                            Select a Playbook and Target VM, then click "Start Playbook Execution".
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 3: FILE SYSTEM MANAGEMENT -->
+    <div class="tab-pane fade" id="disk-panel">
+        <div class="row g-4">
+            <!-- Form Panel -->
+            <div class="col-lg-5">
+                <div class="glass-card p-4">
+                    <h5 class="fw-bold text-white mb-3">
+                        <i class="bi bi-hdd-stack me-2 text-cyan"></i>Disk & LVM Auto-Mount
+                    </h5>
+
+                    <form id="diskForm" onsubmit="handleDiskSubmit(event)">
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-semibold">1. Select Target POD</label>
+                            <select class="form-select form-select-dark font-monospace" id="diskJumpHost" required>
+                                {% for pod in pods %}
+                                <option value="{{ pod.jump_host }}">
+                                    {{ pod.name }} (Jump: {{ pod.jump_host }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-semibold">2. Target VM IP</label>
+                            <input type="text" class="form-control form-control-dark font-monospace text-cyan" id="diskTargetIp" value="192.168.209.136" required>
+                        </div>
+
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label text-muted small fw-semibold">SSH User</label>
+                                <input type="text" class="form-control form-control-dark font-monospace text-cyan" id="diskSshUser" value="root" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label text-muted small fw-semibold">SSH Password</label>
+                                <input type="password" class="form-control form-control-dark font-monospace" id="diskSshPass" placeholder="Target VM password..." required>
+                            </div>
+                        </div>
+
+                        <hr class="border-secondary my-3 opacity-25">
+
+                        <div class="d-flex gap-2 mb-4">
+                            <button type="button" class="btn btn-glass flex-grow-1" onclick="getDiskInfo()">
+                                <i class="bi bi-search me-1"></i> Check Disk Space (lsblk/df)
+                            </button>
+                        </div>
+
+                        <h6 class="fw-bold text-white mb-2">Create New Filesystem (LVM)</h6>
+                        
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-semibold">Target Disk Device</label>
+                            <input type="text" class="form-control form-control-dark font-monospace" id="diskDevice" placeholder="e.g. /dev/sdb">
+                        </div>
+
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-4">
+                                <label class="form-label text-muted small fw-semibold">PV Name</label>
+                                <input type="text" class="form-control form-control-dark font-monospace" id="pvName" placeholder="e.g. /dev/sdb">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label text-muted small fw-semibold">VG Name</label>
+                                <input type="text" class="form-control form-control-dark font-monospace" id="vgName" placeholder="e.g. vg_data">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label text-muted small fw-semibold">LV Name</label>
+                                <input type="text" class="form-control form-control-dark font-monospace" id="lvName" placeholder="e.g. lv_data">
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label text-muted small fw-semibold">Mount Point Directory</label>
+                            <input type="text" class="form-control form-control-dark font-monospace" id="mountPoint" placeholder="e.g. /data">
+                        </div>
+
+                        <button type="submit" class="btn btn-glow-primary w-100 py-2" id="diskSubmitBtn">
+                            <i class="bi bi-play-fill me-1"></i> Create, Format & Mount (XFS)
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Terminal Output Window -->
+            <div class="col-lg-7">
+                <div class="terminal-window h-100 d-flex flex-column" style="min-height: 480px;">
+                    <div class="terminal-header">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="terminal-dots">
+                                <div class="terminal-dot dot-red"></div>
+                                <div class="terminal-dot dot-yellow"></div>
+                                <div class="terminal-dot dot-green"></div>
+                            </div>
+                            <span class="text-muted small font-monospace"><i class="bi bi-terminal me-1"></i> LVM Partition stdout</span>
+                        </div>
+                        <div id="diskStatusBadge">
+                            <span class="badge badge-cyan">STANDBY</span>
+                        </div>
+                    </div>
+
+                    <div class="terminal-body flex-grow-1" id="diskTerminalOutput">
+                        <div class="text-muted font-monospace small">
+                            [LVM Partition Engine Ready]<br>
+                            Click Check Disk Space or Create, Format & Mount to view active step logs.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 4: NFS CONFIGURATION -->
+    <div class="tab-pane fade" id="nfs-panel">
+        <div class="row g-4">
+            <!-- Form Panel -->
+            <div class="col-lg-5">
+                <div class="glass-card p-4">
+                    <h5 class="fw-bold text-white mb-3">
+                        <i class="bi bi-hdd-network me-2 text-violet"></i>NFS Share Provisioning
+                    </h5>
+
+                    <form id="nfsForm" onsubmit="handleNfsSubmit(event)">
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-semibold">1. Select Target POD</label>
+                            <select class="form-select form-select-dark font-monospace" id="nfsJumpHost" required>
+                                {% for pod in pods %}
+                                <option value="{{ pod.jump_host }}">
+                                    {{ pod.name }} (Jump: {{ pod.jump_host }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- NFS Server Configuration -->
+                        <h6 class="fw-bold text-white mb-2 mt-3"><i class="bi bi-server text-cyan me-1"></i>NFS Server (Source)</h6>
+                        
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-semibold">Server Host IP</label>
+                            <input type="text" class="form-control form-control-dark font-monospace text-cyan" id="nfsServerIp" value="192.168.209.135" required>
+                        </div>
+
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label text-muted small fw-semibold">Server SSH User</label>
+                                <input type="text" class="form-control form-control-dark font-monospace text-cyan" id="nfsServerUser" value="root" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label text-muted small fw-semibold">Server SSH Password</label>
+                                <input type="password" class="form-control form-control-dark font-monospace" id="nfsServerPass" placeholder="Server password..." required>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-semibold">Export Directory Path</label>
+                            <input type="text" class="form-control form-control-dark font-monospace" id="nfsExportDir" value="/mnt/nfs_share" required>
+                        </div>
+
+                        <!-- NFS Client Configuration -->
+                        <h6 class="fw-bold text-white mb-2 mt-4"><i class="bi bi-laptop text-cyan me-1"></i>NFS Client (Destination)</h6>
+                        
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-semibold">Client Host IP</label>
+                            <input type="text" class="form-control form-control-dark font-monospace text-cyan" id="nfsClientIp" value="192.168.209.136" required>
+                        </div>
+
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label text-muted small fw-semibold">Client SSH User</label>
+                                <input type="text" class="form-control form-control-dark font-monospace text-cyan" id="nfsClientUser" value="root" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label text-muted small fw-semibold">Client SSH Password</label>
+                                <input type="password" class="form-control form-control-dark font-monospace" id="nfsClientPass" placeholder="Client password..." required>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label text-muted small fw-semibold">Mount Directory Path</label>
+                            <input type="text" class="form-control form-control-dark font-monospace" id="nfsMountDir" value="/mnt/nfs_mount" required>
+                        </div>
+
+                        <button type="submit" class="btn btn-glow-primary w-100 py-2" id="nfsSubmitBtn">
+                            <i class="bi bi-play-fill me-1"></i> Configure exports & Mount shares
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Terminal Output Window -->
+            <div class="col-lg-7">
+                <div class="terminal-window h-100 d-flex flex-column" style="min-height: 480px;">
+                    <div class="terminal-header">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="terminal-dots">
+                                <div class="terminal-dot dot-red"></div>
+                                <div class="terminal-dot dot-yellow"></div>
+                                <div class="terminal-dot dot-green"></div>
+                            </div>
+                            <span class="text-muted small font-monospace"><i class="bi bi-terminal me-1"></i> NFS Provisioning stdout</span>
+                        </div>
+                        <div id="nfsStatusBadge">
+                            <span class="badge badge-cyan">STANDBY</span>
+                        </div>
+                    </div>
+
+                    <div class="terminal-body flex-grow-1" id="nfsTerminalOutput">
+                        <div class="text-muted font-monospace small">
+                            [NFS Sharing Engine Ready]<br>
+                            Click Configure exports & Mount shares to execute tasks and view logs.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 5: TELNET CONNECTIVITY CHECK -->
+    <div class="tab-pane fade" id="telnet-panel">
+        <div class="row g-4">
+            <!-- Form Panel -->
+            <div class="col-lg-5">
+                <div class="glass-card p-4">
+                    <h5 class="fw-bold text-white mb-3">
+                        <i class="bi bi-activity me-2 text-emerald"></i>TCP Connectivity Diagnostic
+                    </h5>
+
+                    <form id="telnetForm" onsubmit="handleTelnetSubmit(event)">
+                        <!-- Target POD -->
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-semibold">1. Select Target POD</label>
+                            <select class="form-select form-select-dark font-monospace" id="telnetJumpHost" required>
+                                {% for pod in pods %}
+                                <option value="{{ pod.jump_host }}">
+                                    {{ pod.name }} (Jump: {{ pod.jump_host }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Source VM (Where to run the test from) -->
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-semibold">2. Source VM IP (Runs Telnet Check)</label>
+                            <input type="text" class="form-control form-control-dark font-monospace text-cyan" id="telnetSourceIp" value="192.168.209.136" required>
+                        </div>
+
+                        <!-- Source VM Credentials -->
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label text-muted small fw-semibold">SSH User</label>
+                                <input type="text" class="form-control form-control-dark font-monospace text-cyan" id="telnetSshUser" value="root" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label text-muted small fw-semibold">SSH Password</label>
+                                <input type="password" class="form-control form-control-dark font-monospace" id="telnetSshPass" placeholder="Target VM password..." required>
+                            </div>
+                        </div>
+
+                        <hr class="border-secondary my-3 opacity-25">
+
+                        <!-- Probe Destination -->
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-semibold">3. Destination IP or Hostname to Check</label>
+                            <input type="text" class="form-control form-control-dark font-monospace text-cyan" id="telnetDestHost" placeholder="e.g. 192.168.209.135 or google.com" required>
+                        </div>
+
+                        <div class="row g-2 mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label text-muted small fw-semibold">Destination Port</label>
+                                <input type="number" class="form-control form-control-dark font-monospace text-cyan" id="telnetDestPort" value="22" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label text-muted small fw-semibold">Timeout (Seconds)</label>
+                                <input type="number" class="form-control form-control-dark font-monospace" id="telnetTimeout" value="3" min="1" max="10" required>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-glow-primary w-100 py-2" id="telnetSubmitBtn">
+                            <i class="bi bi-broadcast me-1"></i> Run Connectivity Check
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Terminal Output Window -->
+            <div class="col-lg-7">
+                <div class="terminal-window h-100 d-flex flex-column" style="min-height: 480px;">
+                    <div class="terminal-header">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="terminal-dots">
+                                <div class="terminal-dot dot-red"></div>
+                                <div class="terminal-dot dot-yellow"></div>
+                                <div class="terminal-dot dot-green"></div>
+                            </div>
+                            <span class="text-muted small font-monospace"><i class="bi bi-terminal me-1"></i> TCP Probe stdout</span>
+                        </div>
+                        <div id="telnetStatusBadge">
+                            <span class="badge badge-cyan">STANDBY</span>
+                        </div>
+                    </div>
+
+                    <div class="terminal-body flex-grow-1" id="telnetTerminalOutput">
+                        <div class="text-muted font-monospace small">
+                            [TCP Connectivity Engine Ready]<br>
+                            Click Run Connectivity Check to probe remote port status.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Target VM Password Authentication Modal -->
+<div class="modal fade" id="passwordModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content glass-card border-secondary text-white">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title fw-bold"><i class="bi bi-key-fill me-2 text-cyan"></i>Target End VM Password Required</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3">
+                    Enter SSH password for target End VM user <strong class="text-cyan" id="modalUser">root</strong> on host <strong class="text-white" id="modalTargetHost">192.168.209.136</strong>.
+                </p>
+                <div class="mb-3">
+                    <label class="form-label text-muted small fw-semibold">Target VM SSH Password</label>
+                    <input type="password" class="form-control form-control-dark font-monospace" id="modalPasswordInput" placeholder="Enter target VM password...">
+                </div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-glass" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-glow-primary" onclick="confirmPasswordAndExecute()">
+                    <i class="bi bi-shield-lock me-1"></i> Authenticate & Run
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let passModalInstance = null;
+let activeFormType = 'adhoc';
+
+document.addEventListener('DOMContentLoaded', () => {
+    passModalInstance = new bootstrap.Modal(document.getElementById('passwordModal'));
+});
+
+function toggleTargetMode(mode) {
+    if (mode === 'single') {
+        document.getElementById('singleTargetWrapper').classList.remove('d-none');
+        document.getElementById('inventoryTargetWrapper').classList.add('d-none');
+        updateFlowEndVm(document.getElementById('targetSingleIp').value);
+    } else {
+        document.getElementById('singleTargetWrapper').classList.add('d-none');
+        document.getElementById('inventoryTargetWrapper').classList.remove('d-none');
+        const inv = document.getElementById('targetInventorySelect').value;
+        updateFlowEndVm(inv || 'Inventory');
+    }
+}
+
+function togglePbTargetMode(mode) {
+    if (mode === 'single') {
+        document.getElementById('pbSingleTargetWrapper').classList.remove('d-none');
+        document.getElementById('pbInventoryTargetWrapper').classList.add('d-none');
+        const el = document.getElementById('pbFlowEndVm');
+        if (el) el.innerText = document.getElementById('pbTargetSingleIp').value;
+    } else {
+        document.getElementById('pbSingleTargetWrapper').classList.add('d-none');
+        document.getElementById('pbInventoryTargetWrapper').classList.remove('d-none');
+        const el = document.getElementById('pbFlowEndVm');
+        if (el) el.innerText = document.getElementById('pbTargetInventorySelect').value;
+    }
+}
+
+function updateFlowJumpHost(val) {
+    const el = document.getElementById('flowJumpHost');
+    if (el) el.innerText = val ? val : '192.168.209.135';
+}
+
+function updateFlowEndVm(val) {
+    const el = document.getElementById('flowEndVm');
+    if (el) el.innerText = val ? val : '192.168.209.136';
+}
+
+function onCommandChange(val) {
+    const customWrapper = document.getElementById('customCommandWrapper');
+    if (val === 'custom') {
+        customWrapper.classList.remove('d-none');
+    } else {
+        customWrapper.classList.add('d-none');
+    }
+}
+
+async function uploadInventoryFile() {
+    const fileInput = document.getElementById('inventoryFileInput');
+    if (!fileInput.files || fileInput.files.length === 0) {
+        alert('Please select a .ini inventory file to upload.');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+
+    try {
+        const res = await fetch('/api/upload_inventory', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert('Inventory file ' + data.filename + ' uploaded successfully!');
+            location.reload();
+        }
+    } catch (e) {
+        alert('Failed to upload file.');
+    }
+}
+
+function getTicketNumber() {
+    const ticketInput = document.getElementById('globalTicketNumber');
+    const ticket = ticketInput.value.trim();
+    if (!ticket) {
+        alert('A Ticket Reference Code is required at the top of the page before performing any operations.');
+        ticketInput.focus();
+        ticketInput.style.borderColor = '#ef4444';
+        ticketInput.style.boxShadow = '0 0 10px rgba(239, 68, 68, 0.25)';
+        return null;
+    }
+    ticketInput.style.borderColor = '#cbd5e1';
+    ticketInput.style.boxShadow = 'none';
+    return ticket;
+}
+
+function handleAdhocSubmit(event) {
+    event.preventDefault();
+    const ticket = getTicketNumber();
+    if (!ticket) return;
+
+    activeFormType = 'adhoc';
+    const sshPass = document.getElementById('adhocSshPass').value;
+    const sshUser = document.getElementById('adhocSshUser').value;
+    const targetSingleIp = document.getElementById('targetSingleIp').value;
+
+    if (!sshPass) {
+        document.getElementById('modalUser').innerText = sshUser;
+        document.getElementById('modalTargetHost').innerText = targetSingleIp;
+        passModalInstance.show();
+    } else {
+        executeAdhoc(sshPass);
+    }
+}
+
+function handlePlaybookSubmit(event) {
+    event.preventDefault();
+    const ticket = getTicketNumber();
+    if (!ticket) return;
+
+    activeFormType = 'playbook';
+    const sshPass = document.getElementById('pbSshPass').value;
+    const sshUser = document.getElementById('pbSshUser').value;
+    const targetSingleIp = document.getElementById('pbTargetSingleIp').value;
+
+    if (!sshPass) {
+        document.getElementById('modalUser').innerText = sshUser;
+        document.getElementById('modalTargetHost').innerText = targetSingleIp;
+        passModalInstance.show();
+    } else {
+        executePlaybook(sshPass);
+    }
+}
+
+function confirmPasswordAndExecute() {
+    const pwd = document.getElementById('modalPasswordInput').value;
+    passModalInstance.hide();
+
+    if (activeFormType === 'adhoc') {
+        document.getElementById('adhocSshPass').value = pwd;
+        executeAdhoc(pwd);
+    } else {
+        document.getElementById('pbSshPass').value = pwd;
+        executePlaybook(pwd);
+    }
+}
+
+async function executeAdhoc(password) {
+    const jumpHost = document.getElementById('adhocJumpHost').value;
+    const targetMode = document.querySelector('input[name="targetMode"]:checked').value;
+    const targetSingleIp = document.getElementById('targetSingleIp').value;
+    const targetInventorySelect = document.getElementById('targetInventorySelect').value;
+    const commandKey = document.getElementById('adhocCommand').value;
+    const customCommand = document.getElementById('customCommandInput').value;
+    const sshUser = document.getElementById('adhocSshUser').value;
+
+    const targetVal = targetMode === 'single' ? targetSingleIp : targetInventorySelect;
+    const btn = document.getElementById('adhocRunBtn');
+    const term = document.getElementById('adhocTerminalOutput');
+    const status = document.getElementById('adhocStatusBadge');
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Tunneling via Jump Host...';
+    status.innerHTML = '<span class="badge badge-amber"><i class="bi bi-arrow-repeat me-1"></i> EXECUTING</span>';
+
+    term.innerHTML = `<div class="log-line"><span class="log-info">[INIT] Connecting OpsHub -> Jump Host (192.168.209.135) -> Target VM (${targetVal})...</span></div>`;
+
+    try {
+        const response = await fetch('/api/execute_adhoc', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                ticket_number: getTicketNumber(),
+                jump_host: jumpHost,
+                target_mode: targetMode,
+                target_value: targetVal,
+                command_key: commandKey,
+                custom_command: customCommand,
+                target_vm_user: sshUser,
+                target_vm_password: password
+            })
+        });
+
+        const result = await response.json();
+        const logs = result.logs || [];
+
+        term.innerHTML = '';
+        let i = 0;
+        const interval = setInterval(() => {
+            if (i < logs.length) {
+                const line = document.createElement('div');
+                line.className = 'log-line';
+                const logText = logs[i];
+                
+                if (logText.includes('[ERROR]') || logText.includes('Failure') || logText.includes('fatal:')) {
+                    line.innerHTML = `<span class="log-error">${logText}</span>`;
+                } else if (logText.includes('[OK]') || logText.includes('rc=0')) {
+                    line.innerHTML = `<span class="log-success">${logText}</span>`;
+                } else if (logText.includes('EXECUTING') || logText.includes('PLAY') || logText.includes('TASK')) {
+                    line.innerHTML = `<span class="log-info">${logText}</span>`;
+                } else {
+                    line.innerHTML = `<span class="text-white font-monospace">${logText}</span>`;
+                }
+
+                term.appendChild(line);
+                term.scrollTop = term.scrollHeight;
+                i++;
+            } else {
+                clearInterval(interval);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-play-fill me-1"></i> Run Ad-Hoc Command';
+                
+                if (result.success) {
+                    status.innerHTML = '<span class="badge badge-emerald"><i class="bi bi-check-circle me-1"></i> SUCCESS</span>';
+                } else {
+                    status.innerHTML = '<span class="badge badge-rose"><i class="bi bi-x-circle me-1"></i> FAILED</span>';
+                }
+                
+                if (result.log_file) {
+                    const notice = document.createElement('div');
+                    notice.className = 'log-line text-cyan mt-2 pt-2 border-top border-secondary';
+                    notice.innerHTML = `<i class="bi bi-file-earmark-check me-1"></i> Log saved: <strong>${result.log_file}</strong> (<a href="/api/download_log/${result.log_file}" class="text-cyan text-decoration-underline ms-1">Download Log</a>)`;
+                    term.appendChild(notice);
+                }
+            }
+        }, 80);
+
+    } catch (err) {
+        term.innerHTML += `<div class="log-line"><span class="log-error">[ERROR] ${err.message}</span></div>`;
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-play-fill me-1"></i> Run Ad-Hoc Command';
+        status.innerHTML = '<span class="badge badge-rose">FAILED</span>';
+    }
+}
+
+async function executePlaybook(password) {
+    const playbookFile = document.getElementById('playbookSelect').value;
+    const jumpHost = document.getElementById('pbJumpHost').value;
+    const sshUser = document.getElementById('pbSshUser').value;
+    const targetMode = document.querySelector('input[name="pbTargetMode"]:checked').value;
+    const targetSingleIp = document.getElementById('pbTargetSingleIp').value;
+    const targetInventorySelect = document.getElementById('pbTargetInventorySelect').value;
+    const extraVars = document.getElementById('pbExtraVars').value;
+
+    const targetVal = targetMode === 'single' ? targetSingleIp : targetInventorySelect;
+    const btn = document.getElementById('pbRunBtn');
+    const term = document.getElementById('pbTerminalOutput');
+    const status = document.getElementById('pbStatusBadge');
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Executing Playbook...';
+    status.innerHTML = '<span class="badge badge-amber"><i class="bi bi-arrow-repeat me-1"></i> EXECUTING</span>';
+
+    term.innerHTML = `<div class="log-line"><span class="log-info">[INIT] Launching ${playbookFile} proxied via Jump Host...</span></div>`;
+
+    try {
+        const response = await fetch('/api/execute_playbook', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                ticket_number: getTicketNumber(),
+                playbook_file: playbookFile,
+                jump_host: jumpHost,
+                target_mode: targetMode,
+                target_value: targetVal,
+                extra_vars: extraVars,
+                target_vm_user: sshUser,
+                target_vm_password: password
+            })
+        });
+
+        const result = await response.json();
+        const logs = result.logs || [];
+
+        term.innerHTML = '';
+        let i = 0;
+        const interval = setInterval(() => {
+            if (i < logs.length) {
+                const line = document.createElement('div');
+                line.className = 'log-line';
+                const logText = logs[i];
+                
+                if (logText.includes('FAILED') || logText.includes('fatal:') || logText.includes('[ERROR]')) {
+                    line.innerHTML = `<span class="log-error">${logText}</span>`;
+                } else if (logText.includes('ok:') || logText.includes('changed:')) {
+                    line.innerHTML = `<span class="log-success">${logText}</span>`;
+                } else if (logText.includes('PLAY') || logText.includes('TASK') || logText.includes('RECAP')) {
+                    line.innerHTML = `<span class="log-info">${logText}</span>`;
+                } else {
+                    line.innerHTML = `<span class="text-white font-monospace">${logText}</span>`;
+                }
+
+                term.appendChild(line);
+                term.scrollTop = term.scrollHeight;
+                i++;
+            } else {
+                clearInterval(interval);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-play-fill me-1"></i> Start Playbook Execution';
+                
+                if (result.success) {
+                    status.innerHTML = '<span class="badge badge-emerald"><i class="bi bi-check-circle me-1"></i> SUCCESS</span>';
+                } else {
+                    status.innerHTML = '<span class="badge badge-rose"><i class="bi bi-x-circle me-1"></i> FAILED</span>';
+                }
+
+                if (result.log_file) {
+                    const notice = document.createElement('div');
+                    notice.className = 'log-line text-cyan mt-2 pt-2 border-top border-secondary';
+                    notice.innerHTML = `<i class="bi bi-file-earmark-check me-1"></i> Playbook log saved: <strong>${result.log_file}</strong> (<a href="/api/download_log/${result.log_file}" class="text-cyan text-decoration-underline ms-1">Download Log</a>)`;
+                    term.appendChild(notice);
+                }
+            }
+        }, 120);
+
+    } catch (err) {
+        term.innerHTML += `<div class="log-line"><span class="log-error">[ERROR] ${err.message}</span></div>`;
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-play-fill me-1"></i> Start Playbook Execution';
+        status.innerHTML = '<span class="badge badge-rose">FAILED</span>';
+    }
+}
+
+// ==========================================
+// STATIC OPERATIONS AUTOPILOT HANDLERS
+// ==========================================
+
+function getStaticTimestamp() {
+    const d = new Date();
+    return d.toTimeString().split(' ')[0];
+}
+
+function appendStaticLogLine(container, message, level='info') {
+    const line = document.createElement('div');
+    line.className = 'log-line';
+    
+    let colorClass = 'text-white';
+    if (level === 'success') colorClass = 'log-success';
+    else if (level === 'warn') colorClass = 'log-warn';
+    else if (level === 'error') colorClass = 'log-error';
+    else if (level === 'info') colorClass = 'text-muted';
+
+    line.innerHTML = `
+        <span class="log-time">[${getStaticTimestamp()}]</span>
+        <span class="font-monospace ${colorClass}">${message}</span>
+    `;
+    container.appendChild(line);
+    container.scrollTop = container.scrollHeight;
+}
+
+function setStaticStatus(elementId, status, badgeClass) {
+    const statusContainer = document.getElementById(elementId);
+    statusContainer.innerHTML = `<span class="badge ${badgeClass}">${status}</span>`;
+}
+
+// Check Disk Space (df -h and lsblk)
+async function getDiskInfo() {
+    const ticketNumber = getTicketNumber();
+    if (!ticketNumber) return;
+
+    const jumpHost = document.getElementById('diskJumpHost').value;
+    const targetHost = document.getElementById('diskTargetIp').value;
+    const user = document.getElementById('diskSshUser').value;
+    const password = document.getElementById('diskSshPass').value;
+
+    if (!targetHost || !user || !password) {
+        alert('Please fill out Target VM IP, User and Password.');
+        return;
+    }
+
+    const term = document.getElementById('diskTerminalOutput');
+    term.innerHTML = '';
+    setStaticStatus('diskStatusBadge', '<i class="bi bi-arrow-repeat me-1"></i> RUNNING', 'badge-amber');
+    
+    appendStaticLogLine(term, 'Initiating target disk diagnostic (lsblk / df)...', 'info');
+    appendStaticLogLine(term, `Target VM: ${user}@${targetHost} via Jump Host proxy...`, 'info');
+
+    try {
+        const res = await fetch('/api/static_ops/disk_info', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ticket_number: ticketNumber, jump_host: jumpHost, target_host: targetHost, user, password })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            setStaticStatus('diskStatusBadge', '<i class="bi bi-check-circle me-1"></i> SUCCESS', 'badge-emerald');
+            data.data.logs.forEach(l => {
+                let lvl = 'info';
+                if (l.includes('❌') || l.includes('[ERROR]')) lvl = 'error';
+                else if (l.includes('TASK [')) lvl = 'success';
+                appendStaticLogLine(term, l, lvl);
+            });
+        } else {
+            setStaticStatus('diskStatusBadge', '<i class="bi bi-x-circle me-1"></i> FAILED', 'badge-rose');
+            const errorLogs = data.logs || ['Execution failed unexpectedly.'];
+            errorLogs.forEach(l => appendStaticLogLine(term, l, 'error'));
+        }
+    } catch (err) {
+        setStaticStatus('diskStatusBadge', '<i class="bi bi-x-circle me-1"></i> FAILED', 'badge-rose');
+        appendStaticLogLine(term, `API Request Error: ${err.message}`, 'error');
+    }
+}
+
+// LVM Create File System Submit
+async function handleDiskSubmit(event) {
+    event.preventDefault();
+    const ticketNumber = getTicketNumber();
+    if (!ticketNumber) return;
+
+    const jumpHost = document.getElementById('diskJumpHost').value;
+    const targetHost = document.getElementById('diskTargetIp').value;
+    const user = document.getElementById('diskSshUser').value;
+    const password = document.getElementById('diskSshPass').value;
+    
+    const newDisk = document.getElementById('diskDevice').value;
+    const pvName = document.getElementById('pvName').value;
+    const vgName = document.getElementById('vgName').value;
+    const lvName = document.getElementById('lvName').value;
+    const mountPoint = document.getElementById('mountPoint').value;
+
+    const btn = document.getElementById('diskSubmitBtn');
+    btn.disabled = true;
+
+    const term = document.getElementById('diskTerminalOutput');
+    term.innerHTML = '';
+    setStaticStatus('diskStatusBadge', '<i class="bi bi-arrow-repeat me-1"></i> RUNNING', 'badge-amber');
+    
+    appendStaticLogLine(term, 'Initializing LVM File System Provisioning Sequence...', 'info');
+    appendStaticLogLine(term, `Device: ${newDisk} -> PV: ${pvName} -> VG: ${vgName} -> LV: ${lvName} -> Mount: ${mountPoint}`, 'info');
+
+    try {
+        const res = await fetch('/api/static_ops/create_filesystem', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                ticket_number: ticketNumber,
+                jump_host: jumpHost, target_host: targetHost, user, password,
+                new_disk: newDisk, pv_name: pvName, vg_name: vgName, lv_name: lvName, mount_point: mountPoint
+            })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            setStaticStatus('diskStatusBadge', '<i class="bi bi-check-circle me-1"></i> SUCCESS', 'badge-emerald');
+            data.data.logs.forEach(l => {
+                let lvl = 'info';
+                if (l.includes('TASK [')) lvl = 'success';
+                appendStaticLogLine(term, l, lvl);
+            });
+        } else {
+            setStaticStatus('diskStatusBadge', '<i class="bi bi-x-circle me-1"></i> FAILED', 'badge-rose');
+            const errorLogs = data.logs || ['Execution failed.'];
+            errorLogs.forEach(l => {
+                let lvl = 'error';
+                if (l.includes('TASK [')) lvl = 'success';
+                appendStaticLogLine(term, l, lvl);
+            });
+        }
+    } catch (err) {
+        setStaticStatus('diskStatusBadge', '<i class="bi bi-x-circle me-1"></i> FAILED', 'badge-rose');
+        appendStaticLogLine(term, `API Request Error: ${err.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+// NFS Provisioning Submit
+async function handleNfsSubmit(event) {
+    event.preventDefault();
+    const ticketNumber = getTicketNumber();
+    if (!ticketNumber) return;
+
+    const jumpHost = document.getElementById('nfsJumpHost').value;
+    
+    const serverHost = document.getElementById('nfsServerIp').value;
+    const serverUser = document.getElementById('nfsServerUser').value;
+    const serverPass = document.getElementById('nfsServerPass').value;
+    const exportDir = document.getElementById('nfsExportDir').value;
+
+    const clientHost = document.getElementById('nfsClientIp').value;
+    const clientUser = document.getElementById('nfsClientUser').value;
+    const clientPass = document.getElementById('nfsClientPass').value;
+    const mountDir = document.getElementById('nfsMountDir').value;
+
+    const btn = document.getElementById('nfsSubmitBtn');
+    btn.disabled = true;
+
+    const term = document.getElementById('nfsTerminalOutput');
+    term.innerHTML = '';
+    setStaticStatus('nfsStatusBadge', '<i class="bi bi-arrow-repeat me-1"></i> RUNNING', 'badge-amber');
+
+    appendStaticLogLine(term, 'Initializing NFS Shares Provisioning Sequence...', 'info');
+    appendStaticLogLine(term, `Server: ${serverHost}:${exportDir} ==> Client: ${clientHost}:${mountDir}`, 'info');
+
+    try {
+        const res = await fetch('/api/static_ops/nfs_config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                ticket_number: ticketNumber,
+                jump_host: jumpHost,
+                server_host: serverHost, server_user: serverUser, server_password: serverPass,
+                client_host: clientHost, client_user: clientUser, client_password: clientPass,
+                export_dir: exportDir, mount_dir: mountDir
+            })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            setStaticStatus('nfsStatusBadge', '<i class="bi bi-check-circle me-1"></i> SUCCESS', 'badge-emerald');
+            data.data.logs.forEach(l => {
+                let lvl = 'info';
+                if (l.includes('TASK [') || l.includes('=====')) lvl = 'success';
+                else if (l.includes('[WARNING]')) lvl = 'warn';
+                appendStaticLogLine(term, l, lvl);
+            });
+        } else {
+            setStaticStatus('nfsStatusBadge', '<i class="bi bi-x-circle me-1"></i> FAILED', 'badge-rose');
+            const errorLogs = data.logs || ['Execution failed.'];
+            errorLogs.forEach(l => {
+                let lvl = 'error';
+                if (l.includes('TASK [') || l.includes('=====')) lvl = 'success';
+                else if (l.includes('[WARNING]')) lvl = 'warn';
+                appendStaticLogLine(term, l, lvl);
+            });
+        }
+    } catch (err) {
+        setStaticStatus('nfsStatusBadge', '<i class="bi bi-x-circle me-1"></i> FAILED', 'badge-rose');
+        appendStaticLogLine(term, `API Request Error: ${err.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+// TCP Connectivity check Submit
+async function handleTelnetSubmit(event) {
+    event.preventDefault();
+    const ticketNumber = getTicketNumber();
+    if (!ticketNumber) return;
+
+    const jumpHost = document.getElementById('telnetJumpHost').value;
+    const targetHost = document.getElementById('telnetSourceIp').value;
+    const user = document.getElementById('telnetSshUser').value;
+    const password = document.getElementById('telnetSshPass').value;
+    const destHost = document.getElementById('telnetDestHost').value;
+    const destPort = document.getElementById('telnetDestPort').value;
+    const timeout = document.getElementById('telnetTimeout').value;
+
+    const btn = document.getElementById('telnetSubmitBtn');
+    btn.disabled = true;
+
+    const term = document.getElementById('telnetTerminalOutput');
+    term.innerHTML = '';
+    setStaticStatus('telnetStatusBadge', '<i class="bi bi-arrow-repeat me-1"></i> RUNNING', 'badge-amber');
+
+    appendStaticLogLine(term, `Initializing remote TCP probe connection request...`, 'info');
+    appendStaticLogLine(term, `Source VM: ${user}@${targetHost} via Jump Host...`, 'info');
+    appendStaticLogLine(term, `Checking connectivity to: ${destHost}:${destPort} (Timeout: ${timeout}s)`, 'info');
+
+    try {
+        const res = await fetch('/api/static_ops/telnet_check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                ticket_number: ticketNumber,
+                jump_host: jumpHost,
+                target_host: targetHost,
+                user: user,
+                password: password,
+                dest_host: destHost,
+                dest_port: destPort,
+                timeout: timeout
+            })
+        });
+        const data = await res.json();
+        const logs = data.success ? data.data.logs : data.result.logs;
+
+        if (data.success) {
+            setStaticStatus('telnetStatusBadge', '<i class="bi bi-check-circle me-1"></i> SUCCESS', 'badge-emerald');
+            logs.forEach(l => {
+                let lvl = 'info';
+                if (l.includes('[OK]') || l.includes('Latency:')) lvl = 'success';
+                else if (l.includes('❌') || l.includes('[FAILED]')) lvl = 'error';
+                appendStaticLogLine(term, l, lvl);
+            });
+        } else {
+            setStaticStatus('telnetStatusBadge', '<i class="bi bi-x-circle me-1"></i> FAILED', 'badge-rose');
+            logs.forEach(l => {
+                let lvl = 'info';
+                if (l.includes('[OK]') || l.includes('Latency:')) lvl = 'success';
+                else if (l.includes('❌') || l.includes('[FAILED]')) lvl = 'error';
+                appendStaticLogLine(term, l, lvl);
+            });
+        }
+    } catch (err) {
+        setStaticStatus('telnetStatusBadge', '<i class="bi bi-x-circle me-1"></i> FAILED', 'badge-rose');
+        appendStaticLogLine(term, `API Request Error: ${err.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function previewCurrentPlaybook() {
+    const selectEl = document.getElementById('playbookSelect');
+    if (!selectEl) return;
+    const filename = selectEl.value;
+    if (!filename) return;
+    
+    const container = document.getElementById('playbookModalContent');
+    container.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Loading playbook content...';
+    
+    if (!window.pbModalInstance) {
+        window.pbModalInstance = new bootstrap.Modal(document.getElementById('playbookModal'));
+    }
+    window.pbModalInstance.show();
+    
+    fetch(`/api/playbooks/${filename}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                container.innerText = data.content;
+            } else {
+                container.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle-fill me-2"></i>Error: ${data.error}</span>`;
+            }
+        })
+        .catch(err => {
+            container.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle-fill me-2"></i>Network request failed.</span>`;
+        });
+}
+</script>
+
+<!-- Playbook Viewer Modal -->
+<div class="modal fade" id="playbookModal" tabindex="-1" aria-labelledby="playbookModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content text-white" style="background: #0f172a; border: 1px solid rgba(255,255,255,0.1); border-radius: 14px;">
+            <div class="modal-header border-0 py-3" style="background: rgba(255,255,255,0.03);">
+                <h5 class="modal-title fw-bold" id="playbookModalLabel"><i class="bi bi-journal-code me-2 text-violet"></i>Playbook Source View</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+                <pre id="playbookModalContent" class="text-light p-4 mb-0" style="max-height: 500px; overflow-y: auto; font-family: var(--font-mono); font-size: 0.85rem; line-height: 1.5; white-space: pre-wrap; background: #020617; border-bottom-left-radius: 14px; border-bottom-right-radius: 14px;"></pre>
+            </div>
+            <div class="modal-footer border-0 bg-dark py-2.5">
+                <button type="button" class="btn btn-secondary px-4 btn-sm" style="border-radius: 7px;" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

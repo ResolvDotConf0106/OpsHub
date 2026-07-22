@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Logs{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+        <h3 class="fw-bold text-white mb-1">Audit & Monitoring Center</h3>
+        <p class="text-muted small mb-0">Trace executions, tracking tickets, system events, and security access logs.</p>
+    </div>
+</div>
+
+<!-- Tabs to separate Execution and System events -->
+<ul class="nav nav-tabs nav-tabs-dark mb-4" id="auditTabs" role="tablist">
+    <li class="nav-item">
+        <button class="nav-link active" id="exec-audit-tab" data-bs-toggle="tab" data-bs-target="#exec-audit-panel">
+            <i class="bi bi-cpu me-2 text-cyan"></i>Automation Executions
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" id="system-audit-tab" data-bs-toggle="tab" data-bs-target="#system-audit-panel">
+            <i class="bi bi-shield-lock me-2 text-warning"></i>Security & System Events
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content" id="auditTabsContent">
+    <!-- Tab 1: Automation Executions -->
+    <div class="tab-pane fade show active" id="exec-audit-panel" role="tabpanel">
+        <div class="glass-card p-4">
+            <div class="d-flex align-items-center justify-content-between mb-4">
+                <h5 class="fw-bold mb-0" style="color: #0f172a;"><i class="bi bi-card-list me-2 text-success"></i>Audited Executions</h5>
+                <!-- Filter Search & Actions -->
+                <div class="d-flex align-items-center gap-3">
+                    <button id="deleteExecBtn" class="btn btn-danger btn-sm d-none" onclick="deleteSelected('exec')">
+                        <i class="bi bi-trash-fill me-1"></i> Delete Selected (<span id="selectedExecCount">0</span>)
+                    </button>
+                    <div style="width: 320px;">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text bg-light border-end-0"><i class="bi bi-search"></i></span>
+                            <input type="text" id="execSearchInput" class="form-control ps-1" placeholder="Search by ticket, user, command..." onkeyup="filterExecTable()">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0" id="execTable">
+                    <thead class="table-light">
+                        <tr style="font-size: 0.8rem; font-weight: 700; color: #475569; border-bottom: 2px solid #e2e8f0;">
+                            <th class="ps-3" style="width: 40px;"><input type="checkbox" id="selectAllExecs" class="form-check-input" onclick="toggleSelectAll('exec')"></th>
+                            <th>Start Time</th>
+                            <th>User</th>
+                            <th>Ticket #</th>
+                            <th>Type</th>
+                            <th>Playbook / Command</th>
+                            <th>Target VM</th>
+                            <th>Status</th>
+                            <th>Duration</th>
+                            <th class="text-end pe-3">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ex in executions %}
+                        <tr style="border-bottom: 1px solid #f1f5f9; font-size: 0.85rem;" class="exec-row">
+                            <td class="ps-3">
+                                <input type="checkbox" class="form-check-input exec-row-check" value="{{ ex.id }}" onchange="updateDeleteBtnState('exec')">
+                            </td>
+                            <td class="text-secondary font-monospace">{{ ex.start_time }}</td>
+                            <td class="fw-semibold text-secondary">{{ ex.username }}</td>
+                            <td><span class="badge bg-light-green text-success font-monospace px-2.5 py-1">{{ ex.ticket_number }}</span></td>
+                            <td class="text-secondary small">{{ ex.execution_type }}</td>
+                            <td class="text-secondary font-monospace extra-small" title="{{ ex.playbook_or_command }}">
+                                {{ ex.playbook_or_command[:30] }}{{ '...' if ex.playbook_or_command|length > 30 }}
+                            </td>
+                            <td class="text-secondary font-monospace small">{{ ex.target_vm }}</td>
+                            <td>
+                                {% if ex.status == 'Success' %}
+                                <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-0.5" style="font-size: 0.72rem;"><i class="bi bi-check-circle-fill me-1"></i>Success</span>
+                                {% elif ex.status == 'Running' %}
+                                <span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-0.5" style="font-size: 0.72rem;"><i class="bi bi-arrow-repeat me-1"></i>Running</span>
+                                {% else %}
+                                <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-0.5" style="font-size: 0.72rem;"><i class="bi bi-x-circle-fill me-1"></i>Failed</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-secondary font-monospace">{{ ex.duration }}s</td>
+                            <td class="text-end pe-3">
+                                {% if ex.log_file %}
+                                <button onclick="viewConsoleLogs('{{ ex.log_file }}')" class="btn btn-sm btn-outline-primary py-1 px-2.5" style="font-size: 0.75rem;">
+                                    <i class="bi bi-terminal me-1"></i> View Logs
+                                </button>
+                                {% else %}
+                                <span class="text-muted extra-small">No logs</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="10" class="text-center py-4 text-muted">No execution log audits recorded yet.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab 2: Security & System Events -->
+    <div class="tab-pane fade" id="system-audit-panel" role="tabpanel">
+        <div class="glass-card p-4">
+            <div class="d-flex align-items-center justify-content-between mb-4">
+                <h5 class="fw-bold mb-0" style="color: #0f172a;"><i class="bi bi-shield-check me-2 text-success"></i>Security Audit Events</h5>
+                <!-- Filter Search & Actions -->
+                <div class="d-flex align-items-center gap-3">
+                    <button id="deleteEventBtn" class="btn btn-danger btn-sm d-none" onclick="deleteSelected('event')">
+                        <i class="bi bi-trash-fill me-1"></i> Delete Selected (<span id="selectedEventCount">0</span>)
+                    </button>
+                    <div style="width: 320px;">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text bg-light border-end-0"><i class="bi bi-search"></i></span>
+                            <input type="text" id="eventSearchInput" class="form-control ps-1" placeholder="Search by user or event type..." onkeyup="filterEventTable()">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0" id="eventTable">
+                    <thead class="table-light">
+                        <tr style="font-size: 0.8rem; font-weight: 700; color: #475569; border-bottom: 2px solid #e2e8f0;">
+                            <th class="ps-3" style="width: 40px;"><input type="checkbox" id="selectAllEvents" class="form-check-input" onclick="toggleSelectAll('event')"></th>
+                            <th>Timestamp</th>
+                            <th>Initiator</th>
+                            <th>Event Category</th>
+                            <th>Event Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ev in events %}
+                        <tr style="border-bottom: 1px solid #f1f5f9; font-size: 0.85rem;" class="event-row">
+                            <td class="ps-3">
+                                <input type="checkbox" class="form-check-input event-row-check" value="{{ ev.id }}" onchange="updateDeleteBtnState('event')">
+                            </td>
+                            <td class="text-secondary font-monospace">{{ ev.timestamp }}</td>
+                            <td class="fw-semibold text-secondary">{{ ev.actor_username }}</td>
+                            <td>
+                                {% if ev.action_type in ['Login', 'Logout'] %}
+                                <span class="badge bg-info-subtle text-info border border-info-subtle px-2 py-0.5" style="font-size: 0.72rem;"><i class="bi bi-person-badge-fill me-1"></i>{{ ev.action_type }}</span>
+                                {% elif ev.action_type in ['Approve Account', 'Register'] %}
+                                <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-0.5" style="font-size: 0.72rem;"><i class="bi bi-shield-check me-1"></i>{{ ev.action_type }}</span>
+                                {% else %}
+                                <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-0.5" style="font-size: 0.72rem;"><i class="bi bi-shield-slash-fill me-1"></i>{{ ev.action_type }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-secondary small">{{ ev.details or '' }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="text-center py-4 text-muted">No security events logged.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Console Logs Viewer Modal -->
+<div class="modal fade" id="logModal" tabindex="-1" aria-labelledby="logModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content" style="border-radius: 14px; border: none; box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
+            <div class="modal-header bg-dark text-white border-0 py-3" style="border-radius: 14px 14px 0 0;">
+                <h5 class="modal-title fw-bold" id="logModalLabel"><i class="bi bi-terminal me-2 text-cyan"></i>Audited Execution Logs</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body bg-dark p-0">
+                <pre id="modalLogContent" class="text-light p-4 mb-0" style="max-height: 500px; overflow-y: auto; font-family: var(--font-mono); font-size: 0.8rem; line-height: 1.5; white-space: pre-wrap; word-break: break-all;"></pre>
+            </div>
+            <div class="modal-footer bg-light border-top py-2.5">
+                <button type="button" class="btn btn-secondary px-4 btn-sm" style="border-radius: 7px;" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let logModal = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+    logModal = new bootstrap.Modal(document.getElementById('logModal'));
+});
+
+function viewConsoleLogs(filename) {
+    const container = document.getElementById('modalLogContent');
+    container.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Loading logs content...';
+    logModal.show();
+
+    fetch(`/api/audit/log/${filename}`)
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            container.innerText = data.content;
+        } else {
+            container.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle-fill me-2"></i>Error: ${data.error}</span>`;
+        }
+    })
+    .catch(error => {
+        container.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle-fill me-2"></i>Network request failed.</span>`;
+    });
+}
+
+function filterExecTable() {
+    const input = document.getElementById('execSearchInput').value.toLowerCase();
+    const rows = document.querySelectorAll('.exec-row');
+    
+    rows.forEach(row => {
+        const text = row.innerText.toLowerCase();
+        if (text.includes(input)) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+function filterEventTable() {
+    const input = document.getElementById('eventSearchInput').value.toLowerCase();
+    const rows = document.querySelectorAll('.event-row');
+    
+    rows.forEach(row => {
+        const text = row.innerText.toLowerCase();
+        if (text.includes(input)) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+function toggleSelectAll(type) {
+    const selectAllCheck = document.getElementById(type === 'exec' ? 'selectAllExecs' : 'selectAllEvents');
+    const rowChecks = document.querySelectorAll(type === 'exec' ? '.exec-row-check' : '.event-row-check');
+    rowChecks.forEach(check => {
+        check.checked = selectAllCheck.checked;
+    });
+    updateDeleteBtnState(type);
+}
+
+function updateDeleteBtnState(type) {
+    const rowChecks = document.querySelectorAll(type === 'exec' ? '.exec-row-check' : '.event-row-check');
+    const selectedChecks = Array.from(rowChecks).filter(c => c.checked);
+    const deleteBtn = document.getElementById(type === 'exec' ? 'deleteExecBtn' : 'deleteEventBtn');
+    const countSpan = document.getElementById(type === 'exec' ? 'selectedExecCount' : 'selectedEventCount');
+    
+    if (selectedChecks.length > 0) {
+        deleteBtn.classList.remove('d-none');
+        countSpan.innerText = selectedChecks.length;
+    } else {
+        deleteBtn.classList.add('d-none');
+        const selectAllCheck = document.getElementById(type === 'exec' ? 'selectAllExecs' : 'selectAllEvents');
+        if (selectAllCheck) selectAllCheck.checked = false;
+    }
+}
+
+function deleteSelected(type) {
+    const rowChecks = document.querySelectorAll(type === 'exec' ? '.exec-row-check' : '.event-row-check');
+    const selectedIds = Array.from(rowChecks).filter(c => c.checked).map(c => c.value);
+    if (selectedIds.length === 0) return;
+    
+    if (!confirm(`Are you sure you want to delete the ${selectedIds.length} selected items?`)) {
+        return;
+    }
+    
+    const url = type === 'exec' ? '/api/admin/delete_execution_logs' : '/api/admin/delete_audit_events';
+    fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ ids: selectedIds })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Failed to delete: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('An error occurred during deletion.');
+    });
+}
+</script>
+{% endblock %}
