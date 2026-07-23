@@ -114,7 +114,19 @@ class AnsibleRunner:
             )
 
             # Step 4: Execute Command on Target End VM
-            stdin, stdout, stderr = target_client.exec_command(command, timeout=15)
+            if target_user != 'root' and target_password:
+                # Execute command via sudo sh to inherit root environment & privileges
+                stdin, stdout, stderr = target_client.exec_command("sudo -S -p '' sh", timeout=15)
+                try:
+                    stdin.write(target_password + '\n')
+                    stdin.write(command + '\n')
+                    stdin.flush()
+                    stdin.channel.shutdown_write()
+                except Exception:
+                    pass
+            else:
+                stdin, stdout, stderr = target_client.exec_command(command, timeout=15)
+
             out_str = stdout.read().decode("utf-8", errors="replace")
             err_str = stderr.read().decode("utf-8", errors="replace")
             exit_code = stdout.channel.recv_exit_status()
@@ -146,7 +158,19 @@ class AnsibleRunner:
                 allow_agent=True,
                 look_for_keys=True
             )
-            stdin, stdout, stderr = client.exec_command(command, timeout=15)
+            if target_user != 'root' and target_password:
+                # Execute command via sudo sh to inherit root environment & privileges
+                stdin, stdout, stderr = client.exec_command("sudo -S -p '' sh", timeout=15)
+                try:
+                    stdin.write(target_password + '\n')
+                    stdin.write(command + '\n')
+                    stdin.flush()
+                    stdin.channel.shutdown_write()
+                except Exception:
+                    pass
+            else:
+                stdin, stdout, stderr = client.exec_command(command, timeout=15)
+
             out_str = stdout.read().decode("utf-8", errors="replace")
             err_str = stderr.read().decode("utf-8", errors="replace")
             exit_code = stdout.channel.recv_exit_status()

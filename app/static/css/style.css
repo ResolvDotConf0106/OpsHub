@@ -241,6 +241,11 @@ body {
     box-shadow: 0 0 10px #00b060;
 }
 
+.pulse-dot.offline {
+    background-color: #e11d48;
+    box-shadow: 0 0 10px #e11d48;
+}
+
 /* Metric Cards */
 .metric-card {
     position: relative;
@@ -530,4 +535,104 @@ main .text-white:not(.btn):not(.badge):not(.terminal-window *):not(.terminal-bod
 
 main .text-white-50:not(.btn):not(.badge):not(.terminal-window *):not(.terminal-body *):not(.log-msg) {
     color: var(--text-dim) !important;
+}
+
+/* Custom Search Bar Visibility Overrides */
+.top-navbar input.form-control::placeholder {
+    color: rgba(255, 255, 255, 0.75) !important;
+}
+
+.top-navbar input.form-control {
+    color: #ffffff !important;
+    background: rgba(255, 255, 255, 0.16) !important;
+    border: 1px solid rgba(255, 255, 255, 0.35) !important;
+    transition: all 0.2s ease;
+}
+
+.top-navbar input.form-control:focus {
+    background: rgba(255, 255, 255, 0.25) !important;
+    border-color: #30ba78 !important;
+    box-shadow: 0 0 0 0.25rem rgba(48, 186, 120, 0.25) !important;
+}
+
+.top-navbar .bi-search {
+    color: rgba(255, 255, 255, 0.75) !important;
+}
+
+/* Terminal Text Color Restorations for Maximum Visibility */
+.terminal-window .text-white,
+.terminal-body .text-white,
+.terminal-window .log-msg,
+.terminal-body .log-msg {
+    color: #ffffff !important;
+}
+
+.terminal-window .text-white-50,
+.terminal-body .text-white-50,
+.terminal-window .text-muted,
+.terminal-body .text-muted {
+    color: #a7f3d0 !important;
+}
+
+.terminal-body .log-time {
+    color: #6ee7b7 !important;
+}
+
+.terminal-body .log-info {
+    color: #30ba78 !important;
+}
+
+.terminal-body .log-warn {
+    color: #fbbf24 !important;
+}
+
+.terminal-body .log-error {
+    color: #fb7185 !important;
+}
+
+.terminal-body .log-success {
+    color: #00e676 !important;
+}
+
+
+
+/* ============================================================
+   REBOOT TASK ENGINE — Progress Timeline Styles
+   ============================================================ */
+
+.reboot-step-dot {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.07);
+    border: 2px solid rgba(255,255,255,0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.05rem;
+    color: #64748b;
+    transition: all 0.4s ease;
+}
+
+.reboot-step-active {
+    animation: rebootPulse 1.2s ease-in-out infinite !important;
+    border-color: #e11d48 !important;
+    color: #e11d48 !important;
+    background: rgba(225,29,72,0.12) !important;
+}
+
+@keyframes rebootPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(225,29,72,0.5); }
+    50%       { box-shadow: 0 0 0 8px rgba(225,29,72,0); }
+}
+
+.reboot-step-connector {
+    flex: 0 0 24px;
+    height: 2px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 2px;
+}
+
+.terminal-body .log-warning {
+    color: #fb923c !important;
 }

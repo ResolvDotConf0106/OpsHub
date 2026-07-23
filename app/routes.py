@@ -4,6 +4,7 @@ from datetime import datetime
 from app.services.pod_service import get_all_pods
 from app.services.ansible_runner import AnsibleRunner, INVENTORY_DIR, LOGS_DIR, PLAYBOOKS_DIR
 from app.services.static_ops_runner import StaticOpsRunner
+from app.services.reboot_runner import RebootRunner, reboot_jobs, reboot_jobs_lock
 from app.services.auth_service import (
     authenticate_user, register_user, get_all_users, update_user_status,
     update_user_role, delete_user, update_ad_credentials, get_ad_credentials,
@@ -32,19 +33,38 @@ def require_login():
                 return redirect(url_for('main.dashboard'))
 
 
-def _inject_ad_credentials(data, user_field='user', pass_field='password'):
-    if 'user' in session:
-        ad_creds = get_ad_credentials(session['user']['id'])
-        if ad_creds and ad_creds['ad_user'] and ad_creds['ad_password']:
-            return ad_creds['ad_user'], ad_creds['ad_password']
+def _inject_ad_credentials(data, user_field='user', pass_field='password', use_ad=False):
+    if use_ad:
+        if 'user' in session:
+            ad_creds = get_ad_credentials(session['user']['id'])
+            if ad_creds and ad_creds['ad_user'] and ad_creds['ad_password']:
+                return ad_creds['ad_user'], ad_creds['ad_password']
     return data.get(user_field), data.get(pass_field)
 
+
+
+def check_jump_host_online(ip, port=22, timeout=1.0):
+    import socket
+    try:
+        with socket.create_connection((ip, int(port)), timeout=timeout):
+            return True
+    except Exception:
+        return False
 
 
 @main.route("/")
 def dashboard():
     pods = get_all_pods()
     
+    online_count = 0
+    for pod in pods:
+        ip = pod.get("jump_host")
+        port = pod.get("ssh_port", 22)
+        is_online = check_jump_host_online(ip, port)
+        pod["is_online"] = is_online
+        if is_online:
+            online_count += 1
+            
     completed_jobs_count = 0
     recent_activities = []
 
@@ -67,12 +87,17 @@ def dashboard():
             {"time": "Just now", "type": "INFO", "event": "Hyderabad POD online (Jump: 192.168.209.135, App: 192.168.209.136)"}
         ]
     
+    total_pods = len(pods)
+    health_percentage = 100
+    if total_pods > 0:
+        health_percentage = int((online_count / total_pods) * 100)
+
     metrics = {
-        "total_pods": len(pods),
-        "total_vms": 2,
+        "total_pods": total_pods,
+        "total_vms": total_pods * 2,
         "running_jobs": 0,
         "completed_jobs": completed_jobs_count,
-        "cluster_health": "100%"
+        "cluster_health": f"{health_percentage}%"
     }
 
     return render_template(
@@ -105,12 +130,23 @@ def execute():
     
     saved_inventories = AnsibleRunner.get_available_inventories()
 
+    # Load Active Directory credentials info for the current user
+    ad_creds = None
+    if 'user' in session:
+        ad_creds = get_ad_credentials(session['user']['id'])
+    
+    has_ad_creds = bool(ad_creds and ad_creds.get('ad_user') and ad_creds.get('ad_password'))
+    ad_username = ad_creds.get('ad_user') if has_ad_creds else ""
+
     return render_template(
         "execute.html", 
         pods=pods, 
         playbooks=playbooks_list,
-        inventories=saved_inventories
+        inventories=saved_inventories,
+        has_ad_creds=has_ad_creds,
+        ad_username=ad_username
     )
+
 
 
 @main.route("/api/execute_adhoc", methods=["POST"])
@@ -126,7 +162,8 @@ def execute_adhoc_api():
     target_value = data.get("target_value", "192.168.209.136")
     command_key = data.get("command_key", "uptime")
     custom_command = data.get("custom_command")
-    target_vm_user, target_vm_password = _inject_ad_credentials(data, 'target_vm_user', 'target_vm_password')
+    use_ad = data.get("use_ad", False)
+    target_vm_user, target_vm_password = _inject_ad_credentials(data, 'target_vm_user', 'target_vm_password', use_ad=use_ad)
 
     exec_id = log_execution_start(
         user_id=session['user']['id'] if 'user' in session else None,
@@ -182,7 +219,8 @@ def execute_playbook_api():
     jump_host = data.get("jump_host", "192.168.209.135")
     target_mode = data.get("target_mode", "single")
     target_value = data.get("target_value", "192.168.209.136")
-    target_vm_user, target_vm_password = _inject_ad_credentials(data, 'target_vm_user', 'target_vm_password')
+    use_ad = data.get("use_ad", False)
+    target_vm_user, target_vm_password = _inject_ad_credentials(data, 'target_vm_user', 'target_vm_password', use_ad=use_ad)
     extra_vars = data.get("extra_vars")
 
     exec_id = log_execution_start(
@@ -260,6 +298,24 @@ def download_log_api(filename):
         return jsonify({"error": "Log file not found."}), 404
         
     return send_from_directory(LOGS_DIR, safe_name, as_attachment=True)
+
+
+@main.route("/api/delete_log/<filename>", methods=["POST"])
+def delete_log_api(filename):
+    """Allows administrators to permanently delete a log file."""
+    if 'user' not in session or session['user'].get('role') not in ['Admin', 'Administrator']:
+        return jsonify({"error": "Unauthorized Access"}), 403
+
+    safe_name = Path(filename).name
+    target_path = LOGS_DIR / safe_name
+    if target_path.exists() and target_path.is_file():
+        try:
+            target_path.unlink()
+            return jsonify({"success": True, "message": f"Log file {safe_name} deleted successfully."})
+        except Exception as e:
+            return jsonify({"error": f"Failed to delete: {str(e)}"}), 500
+
+    return jsonify({"error": "File not found."}), 404
 
 
 @main.route("/inventories")
@@ -343,10 +399,6 @@ def jobs():
 @main.route("/logs")
 def logs():
     saved_files = []
-    log_entries = []
-    
-    target_file = request.args.get("file")
-
     if LOGS_DIR.exists():
         for f in sorted(LOGS_DIR.glob("*.log"), reverse=True):
             saved_files.append({
@@ -355,83 +407,7 @@ def logs():
                 "mtime": datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
             })
 
-    if saved_files:
-        # Default to the first (latest) log file, or the target file if it exists
-        filename_to_load = saved_files[0]["filename"]
-        if target_file:
-            if any(sf["filename"] == target_file for sf in saved_files):
-                filename_to_load = target_file
-                
-        latest_path = LOGS_DIR / filename_to_load
-        
-        # Read the file and attempt to determine a base date/time
-        base_time = None
-        with open(latest_path, "r", encoding="utf-8", errors="replace") as lf:
-            lines = lf.readlines()
-            
-        for line in lines:
-            if "Timestamp" in line and ":" in line:
-                parts = line.split(":", 1)
-                try:
-                    dt_str = parts[1].strip()
-                    base_time = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
-                    break
-                except Exception:
-                    pass
-                    
-        if not base_time:
-            # Fallback to the file modification time
-            base_time = datetime.fromtimestamp(latest_path.stat().st_mtime)
-            
-        import re
-        time_pattern = re.compile(r'(?:^|\s)(\d{2}):(\d{2}):(\d{2})(?:\s|$)')
-        current_time = base_time
-        
-        for idx, line in enumerate(lines):
-            line_str = line.strip()
-            if not line_str:
-                continue
-                
-            # Try parsing a specific HH:MM:SS inside the log line
-            match = time_pattern.search(line_str)
-            if match:
-                try:
-                    h, m, s = map(int, match.groups())
-                    line_time = base_time.replace(hour=h, minute=m, second=s)
-                    current_time = line_time # Update sequential tracker
-                except Exception:
-                    line_time = current_time
-            else:
-                # Increment slightly to preserve chronological sequence
-                line_time = current_time
-                
-            level = "INFO"
-            if "SUCCESS" in line_str or "OK" in line_str or "pong" in line_str or "rc=0" in line_str or "[OK]" in line_str:
-                level = "SUCCESS"
-            elif "WARN" in line_str:
-                level = "WARN"
-            elif "ERROR" in line_str or "FAILED" in line_str or "fatal:" in line_str or "❌" in line_str:
-                level = "ERROR"
-            
-            log_entries.append({
-                "time": line_time.strftime("%H:%M:%S"),
-                "level": level,
-                "source": filename_to_load,
-                "message": line_str,
-                "timestamp_raw": line_time.strftime("%Y-%m-%d %H:%M:%S")
-            })
-    else:
-        log_entries = [
-            {
-                "time": datetime.now().strftime("%H:%M:%S"),
-                "level": "INFO",
-                "source": "opshub.system",
-                "message": "OpsHub Central Engine Ready",
-                "timestamp_raw": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            }
-        ]
-
-    return render_template("logs.html", logs=log_entries, saved_files=saved_files, current_loaded_file=target_file)
+    return render_template("logs.html", saved_files=saved_files)
 
 
 @main.route("/api/static_ops/disk_info", methods=["POST"])
@@ -444,7 +420,8 @@ def api_disk_info():
         
     jump_host = data.get("jump_host")
     target_host = data.get("target_host")
-    user, password = _inject_ad_credentials(data, 'user', 'password')
+    use_ad = data.get("use_ad", False)
+    user, password = _inject_ad_credentials(data, 'user', 'password', use_ad=use_ad)
 
     exec_id = log_execution_start(
         user_id=session['user']['id'] if 'user' in session else None,
@@ -490,7 +467,8 @@ def api_create_filesystem():
         
     jump_host = data.get("jump_host")
     target_host = data.get("target_host")
-    user, password = _inject_ad_credentials(data, 'user', 'password')
+    use_ad = data.get("use_ad", False)
+    user, password = _inject_ad_credentials(data, 'user', 'password', use_ad=use_ad)
     new_disk = data.get("new_disk")
     pv_name = data.get("pv_name")
     vg_name = data.get("vg_name")
@@ -543,9 +521,11 @@ def api_nfs_config():
         
     jump_host = data.get("jump_host")
     server_host = data.get("server_host")
-    server_user, server_password = _inject_ad_credentials(data, 'server_user', 'server_password')
+    use_ad_server = data.get("use_ad_server", False)
+    server_user, server_password = _inject_ad_credentials(data, 'server_user', 'server_password', use_ad=use_ad_server)
     client_host = data.get("client_host")
-    client_user, client_password = _inject_ad_credentials(data, 'client_user', 'client_password')
+    use_ad_client = data.get("use_ad_client", False)
+    client_user, client_password = _inject_ad_credentials(data, 'client_user', 'client_password', use_ad=use_ad_client)
     export_dir = data.get("export_dir")
     mount_dir = data.get("mount_dir")
 
@@ -596,7 +576,8 @@ def api_telnet_check():
         
     jump_host = data.get("jump_host")
     target_host = data.get("target_host")
-    user, password = _inject_ad_credentials(data, 'user', 'password')
+    use_ad = data.get("use_ad", False)
+    user, password = _inject_ad_credentials(data, 'user', 'password', use_ad=use_ad)
     dest_host = data.get("dest_host")
     dest_port = data.get("dest_port")
     timeout = data.get("timeout", 3)
@@ -820,3 +801,138 @@ def admin_delete_audit_events():
         return jsonify({"success": True, "message": f"Successfully deleted {len(event_ids)} audit events."})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REBOOT TASK ENGINE
+# ─────────────────────────────────────────────────────────────────────────────
+
+@main.route("/api/reboot/start", methods=["POST"])
+def reboot_start():
+    """Kick off a background reboot job. Returns job_id and precheck status immediately."""
+    data = request.get_json() or {}
+
+    ticket_number = data.get("ticket_number", "").strip()
+    if not ticket_number:
+        return jsonify({"success": False, "error": "Ticket Number is mandatory."}), 400
+
+    jump_host     = data.get("jump_host", "")
+    target_ip     = data.get("target_ip", "")
+    target_user   = data.get("target_user", "root")
+    target_pass   = data.get("target_password", "")
+    use_ad        = data.get("use_ad", False)
+    timeout_min   = int(data.get("timeout_minutes", 15))
+
+    # Optionally inject AD credentials
+    if use_ad and 'user' in session:
+        from app.services.auth_service import get_ad_credentials
+        ad = get_ad_credentials(session['user']['id'])
+        if ad and ad.get('ad_user') and ad.get('ad_password'):
+            target_user = ad['ad_user']
+            target_pass = ad['ad_password']
+
+    if not jump_host or not target_ip:
+        return jsonify({"success": False, "error": "Jump Host and Target IP are required."}), 400
+
+    username = session['user']['username'] if 'user' in session else 'system'
+
+    # Log execution start in audit DB
+    exec_id = log_execution_start(
+        user_id=session['user']['id'] if 'user' in session else None,
+        username=username,
+        ticket_number=ticket_number,
+        execution_type="Controlled Reboot",
+        target_vm=target_ip,
+        inventory_used="N/A",
+        playbook_or_command="reboot",
+        log_file=None
+    )
+
+    job_id = RebootRunner.start_reboot_job(
+        jump_host=jump_host,
+        target_host=target_ip,
+        target_user=target_user,
+        target_pass=target_pass,
+        ticket_number=ticket_number,
+        username=username,
+        timeout_minutes=timeout_min
+    )
+
+    # Wire exec_id into the job so the background thread closes the audit record
+    RebootRunner.set_exec_id(job_id, exec_id)
+
+    return jsonify({"success": True, "job_id": job_id, "exec_id": exec_id})
+
+
+@main.route("/api/reboot/<job_id>/status", methods=["GET"])
+def reboot_status(job_id):
+    """Poll endpoint: returns current job state + new events since last_index."""
+    import threading
+    job = RebootRunner.get_job_status(job_id)
+    if not job:
+        return jsonify({"error": "Job not found."}), 404
+
+    # Client sends ?since=N to receive only events after index N
+    since = int(request.args.get("since", 0))
+    all_events = job.get("events", [])
+    new_events  = all_events[since:]
+
+    return jsonify({
+        "job_id":        job_id,
+        "status":        job["status"],
+        "phase":         job["phase"],
+        "target":        job["target"],
+        "events":        new_events,
+        "total_events":  len(all_events),
+        "precheck_log":  job.get("precheck_log"),
+        "full_log":      job.get("full_log"),
+        "error":         job.get("error"),
+    })
+
+
+@main.route("/api/reboot/<job_id>/terminate", methods=["POST"])
+def terminate_reboot(job_id):
+    import time
+    with reboot_jobs_lock:
+        if job_id in reboot_jobs:
+            reboot_jobs[job_id]["status"] = "ERROR"
+            reboot_jobs[job_id]["error"] = "Terminated by user midway."
+            exec_id = reboot_jobs[job_id].get("exec_id")
+            started_ts = reboot_jobs[job_id].get("started_ts", time.time())
+    
+    if exec_id:
+        try:
+            from app.services.audit_service import log_execution_end
+            log_execution_end(exec_id, "Failed", round(time.time() - started_ts, 1))
+        except Exception:
+            pass
+            
+    return jsonify({"success": True})
+
+
+@main.route("/api/dashboard/running_jobs", methods=["GET"])
+def get_running_jobs_metric():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM execution_logs WHERE status = 'Running'")
+    running_count = cursor.fetchone()[0]
+    
+    # Also fetch recent activities dynamically!
+    recent_activities = []
+    if LOGS_DIR.exists():
+        log_files = sorted(LOGS_DIR.glob("*.log"), key=lambda x: x.stat().st_mtime, reverse=True)
+        for lf in log_files[:4]:
+            mtime_str = datetime.fromtimestamp(lf.stat().st_mtime).strftime("%H:%M:%S")
+            is_adhoc = "adhoc" in lf.name
+            event_type = "Ad-Hoc Command" if is_adhoc else "Playbook Execution"
+            recent_activities.append({
+                "time": mtime_str,
+                "type": "SUCCESS",
+                "event": f"{event_type} recorded ({lf.name})"
+            })
+    conn.close()
+    
+    return jsonify({
+        "running_jobs": running_count,
+        "recent_activities": recent_activities
+    })

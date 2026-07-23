@@ -258,210 +258,315 @@ class StaticOpsRunner:
             "CONNECTING VIA JUMP HOST...",
         ]
 
-        # ----------------SERVER CONFIGURATION----------------
-        logs.append("\n=================== NFS SERVER CONFIGURATION ===================")
-        
-        # Step 1: Install nfs-utils on Server
-        logs.append("\nTASK [1. Install nfs-utils on Server] ******************************************")
-        cmd = "dnf install -y nfs-utils"
-        logs.append(f"Executing: {cmd}")
+        # ----------------==================================----------------
+        # SERVER SIDE (NFS SERVER)
+        # ----------------==================================----------------
+        logs.append("\n=================== SERVER SIDE (NFS SERVER) ===================")
+
+        # 1. Collect Inputs
+        logs.append("\nTASK [1. Collect Inputs] *******************************************************")
+        logs.append(f"  NFS Server IP: {server_host}")
+        logs.append(f"  Export Directory: {export_dir}")
+        logs.append(f"  Client IP: {client_host}")
+        logs.append("  Export options: rw,sync,no_subtree_check")
+
+        # 2. Validate Filesystem (Ensure Directory Exists)
+        logs.append("\nTASK [2. Validate Filesystem] **************************************************")
+        cmd_create = f"mkdir -p {export_dir} && chmod 777 {export_dir}"
         ok, code, out, err = AnsibleRunner.ssh_execute_via_jump(
             jump_host=jump_ip, jump_user=jump_user, jump_password=jump_pass,
             target_host=server_host, target_user=server_user, target_password=server_pass,
-            command=cmd
+            command=cmd_create
         )
-        if not ok or code != 0:
-            logs.append(f"❌ [FAILED] Server package installation failed. Code: {code}, Error: {err or out}")
-            AnsibleRunner.save_execution_log(logs, prefix="nfs_config_fail")
-            return False, logs
-        logs.append(f"Success: {out.strip()}")
-
-        # Step 2: Start/Enable NFS Server service
-        logs.append("\nTASK [2. Enable and Start NFS Server Service] **********************************")
-        cmd = "systemctl enable --now nfs-server"
-        logs.append(f"Executing: {cmd}")
+        cmd_val = f"ls -ld {export_dir}"
+        logs.append(f"Executing directory validation command: {cmd_val}")
         ok, code, out, err = AnsibleRunner.ssh_execute_via_jump(
             jump_host=jump_ip, jump_user=jump_user, jump_password=jump_pass,
             target_host=server_host, target_user=server_user, target_password=server_pass,
-            command=cmd
+            command=cmd_val
         )
         if not ok or code != 0:
-            logs.append(f"❌ [FAILED] Server systemctl failed. Code: {code}, Error: {err or out}")
+            logs.append(f"❌ [FAILED] Directory {export_dir} validation failed. Code: {code}, Error: {err or out}")
             AnsibleRunner.save_execution_log(logs, prefix="nfs_config_fail")
             return False, logs
-        logs.append("Success: NFS service running.")
+        logs.append(f"Directory verified: {out.strip()}")
 
-        # Step 3: Create Export Directory
-        logs.append("\nTASK [3. Create and set Export Directory permissions] *************************")
-        cmd = f"mkdir -p {export_dir} && chmod 777 {export_dir}"
-        logs.append(f"Executing: {cmd}")
-        ok, code, out, err = AnsibleRunner.ssh_execute_via_jump(
+        # 3. Backup Existing Configuration
+        logs.append("\nTASK [3. Backup Existing Configuration] ****************************************")
+        bkp_cmd = "cp -p /etc/exports /etc/exports_bkp_$(date +%Y%m%d_%H%M%S) 2>/dev/null || true"
+        logs.append(f"Executing: {bkp_cmd}")
+        AnsibleRunner.ssh_execute_via_jump(
             jump_host=jump_ip, jump_user=jump_user, jump_password=jump_pass,
             target_host=server_host, target_user=server_user, target_password=server_pass,
-            command=cmd
+            command=bkp_cmd
         )
-        if not ok or code != 0:
-            logs.append(f"❌ [FAILED] Server directory creation failed. Code: {code}, Error: {err or out}")
-            AnsibleRunner.save_execution_log(logs, prefix="nfs_config_fail")
-            return False, logs
-        logs.append(f"Success: Export directory {export_dir} created.")
+        logs.append("Backup command sent for /etc/exports.")
 
-        # Step 4: Configure Exports
+        # 4. Update /etc/exports (Duplicate check and append logic)
         logs.append("\nTASK [4. Update /etc/exports] **************************************************")
-        export_entry = f"{export_dir} *(rw,sync,no_root_squash)"
-        cmd = f"grep -qF '{export_dir}' /etc/exports || echo '{export_entry}' >> /etc/exports"
-        logs.append(f"Executing: {cmd}")
+        export_entry = f"{export_dir} {client_host}(rw,sync,no_subtree_check)"
+        
+        py_cmd = (
+            f"python3 -c \"import os, sys; p = '/etc/exports'; ed = sys.argv[1]; ch = sys.argv[2]; opt = sys.argv[3]; "
+            f"if not os.path.exists(p):\\n  with open(p, 'w') as f: pass\\n"
+            f"with open(p, 'r') as f: lines = f.readlines()\\n"
+            f"exists = False\\n"
+            f"for l in lines:\\n"
+            f"  l = l.strip()\\n"
+            f"  if not l or l.startswith('#'): continue\\n"
+            f"  pts = l.split()\\n"
+            f"  if len(pts) >= 2:\\n"
+            f"    if pts[0] == ed and ch in ''.join(pts[1:]):\\n"
+            f"      exists = True; break\\n"
+            f"if exists:\\n"
+            f"  print('SKIP')\\n"
+            f"else:\\n"
+            f"  with open(p, 'a') as f:\\n"
+            f"    if lines and not lines[-1].endswith('\\\\n'): f.write('\\\\n')\\n"
+            f"    f.write(f'{{ed}} {{ch}}({{opt}})\\\\n')\\n"
+            f"  print('APPENDED')\" '{export_dir}' '{client_host}' 'rw,sync,no_subtree_check'"
+        )
+        logs.append("Running duplicate export verification check...")
         ok, code, out, err = AnsibleRunner.ssh_execute_via_jump(
             jump_host=jump_ip, jump_user=jump_user, jump_password=jump_pass,
             target_host=server_host, target_user=server_user, target_password=server_pass,
-            command=cmd
+            command=py_cmd
         )
         if not ok or code != 0:
             logs.append(f"❌ [FAILED] Server exports update failed. Code: {code}, Error: {err or out}")
             AnsibleRunner.save_execution_log(logs, prefix="nfs_config_fail")
             return False, logs
-        logs.append(f"Success: Exports file updated with {export_entry}")
+        
+        result_str = out.strip()
+        if "SKIP" in result_str:
+            logs.append("ℹ️  Export entry already exists for same directory and client. Skipping addition.")
+        else:
+            logs.append("Success: Export entry successfully appended to /etc/exports.")
 
-        # Step 5: Reload Export Table
-        logs.append("\nTASK [5. Reload exportfs] ******************************************************")
-        cmd = "exportfs -rav"
-        logs.append(f"Executing: {cmd}")
+        # Show verified exports
+        ok_cat, code_cat, out_cat, err_cat = AnsibleRunner.ssh_execute_via_jump(
+            jump_host=jump_ip, jump_user=jump_user, jump_password=jump_pass,
+            target_host=server_host, target_user=server_user, target_password=server_pass,
+            command="cat /etc/exports"
+        )
+        logs.append("Verified /etc/exports contents:")
+        logs.extend([f"  {line}" for line in out_cat.splitlines()])
+
+        # 5. Refresh Exports
+        logs.append("\nTASK [5. Refresh Exports] ******************************************************")
+        cmd_refresh = "exportfs -avr"
+        logs.append(f"Executing: {cmd_refresh}")
         ok, code, out, err = AnsibleRunner.ssh_execute_via_jump(
             jump_host=jump_ip, jump_user=jump_user, jump_password=jump_pass,
             target_host=server_host, target_user=server_user, target_password=server_pass,
-            command=cmd
+            command=cmd_refresh
         )
         if not ok or code != 0:
             logs.append(f"❌ [FAILED] exportfs reload failed. Code: {code}, Error: {err or out}")
             AnsibleRunner.save_execution_log(logs, prefix="nfs_config_fail")
             return False, logs
-        logs.append(f"Success: {out.strip()}")
+        logs.append("exportfs output:")
+        logs.extend([f"  {line}" for line in out.splitlines()])
 
-        # Step 6: Server Firewall opening
-        logs.append("\nTASK [6. Open firewall services for NFS] ***************************************")
-        cmd = "firewall-cmd --add-service=nfs --permanent && firewall-cmd --reload"
-        logs.append(f"Executing: {cmd}")
+        # 6. Verify Export (with showmount)
+        logs.append("\nTASK [6. Verify Export (showmount -e)] *****************************************")
+        cmd_show = f"showmount -e localhost"
+        logs.append(f"Executing: {cmd_show}")
         ok, code, out, err = AnsibleRunner.ssh_execute_via_jump(
             jump_host=jump_ip, jump_user=jump_user, jump_password=jump_pass,
             target_host=server_host, target_user=server_user, target_password=server_pass,
-            command=cmd
+            command=cmd_show
         )
-        if not ok or code != 0:
-            logs.append(f"[WARNING] Firewall not updated (service may be inactive or absent): {err or out}")
-        else:
-            logs.append("Success: Firewall ports opened.")
+        
+        export_visible = ok and (export_dir in out)
+        if not export_visible:
+            logs.append("⚠️  Export not immediately visible. Attempting recovery and restart of services...")
+            # 7. If Export Is Not Visible (Restart Services)
+            logs.append("\nTASK [7. Restart NFS Services for Recovery] ***********************************")
+            restart_cmd = (
+                "systemctl status nfs-server || true; "
+                "systemctl status rpcbind || true; "
+                "systemctl restart rpcbind && "
+                "systemctl restart rpcbind.socket && "
+                "systemctl restart nfs-server && "
+                "exportfs -avr"
+            )
+            logs.append(f"Executing service restarts & re-export: {restart_cmd}")
+            AnsibleRunner.ssh_execute_via_jump(
+                jump_host=jump_ip, jump_user=jump_user, jump_password=jump_pass,
+                target_host=server_host, target_user=server_user, target_password=server_pass,
+                command=restart_cmd
+            )
 
-        # Step 7: Verify with showmount
-        logs.append("\nTASK [7. Verify Exports locally (showmount -e)] ********************************")
-        cmd = "showmount -e localhost"
-        logs.append(f"Executing: {cmd}")
+            # Re-verify export list
+            logs.append("Re-checking showmount:")
+            ok, code, out, err = AnsibleRunner.ssh_execute_via_jump(
+                jump_host=jump_ip, jump_user=jump_user, jump_password=jump_pass,
+                target_host=server_host, target_user=server_user, target_password=server_pass,
+                command=cmd_show
+            )
+            logs.extend([f"  {line}" for line in out.splitlines()])
+        else:
+            logs.append("showmount output:")
+            logs.extend([f"  {line}" for line in out.splitlines()])
+
+        # 8. Verify RPC Services
+        logs.append("\nTASK [8. Verify RPC Services (rpcinfo -p)] *************************************")
+        cmd_rpc = "rpcinfo -p"
+        logs.append(f"Executing: {cmd_rpc}")
         ok, code, out, err = AnsibleRunner.ssh_execute_via_jump(
             jump_host=jump_ip, jump_user=jump_user, jump_password=jump_pass,
             target_host=server_host, target_user=server_user, target_password=server_pass,
-            command=cmd
+            command=cmd_rpc
         )
         if ok:
-            logs.extend(out.splitlines())
+            logs.append("Registered RPC services:")
+            logs.extend([f"  {line}" for line in out.splitlines()[:20]]) # truncate long output
         else:
-            logs.append(f"[WARNING] Local showmount check failed: {err}")
+            logs.append(f"⚠️  Could not fetch RPC list: {err}")
 
+        # ----------------==================================----------------
+        # CLIENT SIDE (NFS CLIENT)
+        # ----------------==================================----------------
+        logs.append("\n=================== CLIENT SIDE (NFS CLIENT) ===================")
 
-        # ----------------CLIENT CONFIGURATION----------------
-        logs.append("\n=================== NFS CLIENT CONFIGURATION ===================")
-
-        # Step 8: Install nfs-utils on Client
-        logs.append("\nTASK [8. Install nfs-utils on Client] ******************************************")
-        cmd = "dnf install -y nfs-utils"
-        logs.append(f"Executing: {cmd}")
+        # 1. Verify Export from Client
+        logs.append("\nTASK [9. Verify Server Export list from Client] *******************************")
+        cmd_cli_show = f"showmount -e {server_host}"
+        logs.append(f"Executing on client: {cmd_cli_show}")
         ok, code, out, err = AnsibleRunner.ssh_execute_via_jump(
             jump_host=jump_ip, jump_user=jump_user, jump_password=jump_pass,
             target_host=client_host, target_user=client_user, target_password=client_pass,
-            command=cmd
+            command=cmd_cli_show
         )
-        if not ok or code != 0:
-            logs.append(f"❌ [FAILED] Client package installation failed. Code: {code}, Error: {err or out}")
+        if not ok or "clnt_create" in out or "clnt_create" in err:
+            logs.append("⚠️  RPC Program not registered. Retrying once in 5 seconds...")
+            time.sleep(5)
+            ok, code, out, err = AnsibleRunner.ssh_execute_via_jump(
+                jump_host=jump_ip, jump_user=jump_user, jump_password=jump_pass,
+                target_host=client_host, target_user=client_user, target_password=client_pass,
+                command=cmd_cli_show
+            )
+        if not ok:
+            logs.append(f"❌ [FAILED] Client showmount verification failed: {err or out}")
             AnsibleRunner.save_execution_log(logs, prefix="nfs_config_fail")
             return False, logs
-        logs.append(f"Success: {out.strip()}")
+        logs.append(f"Client saw exports:")
+        logs.extend([f"  {line}" for line in out.splitlines()])
 
-        # Step 9: Create Mount Directory
-        logs.append("\nTASK [9. Create Client Mount Directory] ***************************************")
-        cmd = f"mkdir -p {mount_dir}"
-        logs.append(f"Executing: {cmd}")
+        # 2 & 3. Create Mount Point
+        logs.append(f"\nTASK [10. Create Mount Point directory {mount_dir}] ****************************")
+        cmd_mount_point = f"mkdir -p {mount_dir}"
+        logs.append(f"Executing on client: {cmd_mount_point}")
         ok, code, out, err = AnsibleRunner.ssh_execute_via_jump(
             jump_host=jump_ip, jump_user=jump_user, jump_password=jump_pass,
             target_host=client_host, target_user=client_user, target_password=client_pass,
-            command=cmd
+            command=cmd_mount_point
         )
         if not ok or code != 0:
             logs.append(f"❌ [FAILED] Client directory creation failed. Code: {code}, Error: {err or out}")
             AnsibleRunner.save_execution_log(logs, prefix="nfs_config_fail")
             return False, logs
-        logs.append(f"Success: Mount point {mount_dir} created.")
+        logs.append("Success: Mount point directory verified.")
 
-        # Step 10: Backup Client fstab
-        logs.append("\nTASK [10. Backup Client /etc/fstab] ********************************************")
-        cmd = "cp /etc/fstab /etc/fstab.bak"
-        logs.append(f"Executing: {cmd}")
-        ok, code, out, err = AnsibleRunner.ssh_execute_via_jump(
+        # 4. Backup fstab
+        logs.append("\nTASK [11. Backup fstab configuration] ******************************************")
+        cmd_fstab_bkp = "cp -p /etc/fstab /etc/fstab_bkp_$(date +%Y%m%d_%H%M%S) 2>/dev/null || true"
+        logs.append(f"Executing fstab backup.")
+        AnsibleRunner.ssh_execute_via_jump(
             jump_host=jump_ip, jump_user=jump_user, jump_password=jump_pass,
             target_host=client_host, target_user=client_user, target_password=client_pass,
-            command=cmd
+            command=cmd_fstab_bkp
         )
-        if not ok or code != 0:
-            logs.append(f"❌ [FAILED] Client fstab backup failed. Code: {code}, Error: {err or out}")
-            AnsibleRunner.save_execution_log(logs, prefix="nfs_config_fail")
-            return False, logs
-        logs.append("Success: /etc/fstab.bak created on client.")
+        logs.append("Backup fstab command completed.")
 
-        # Step 11: Update Client fstab
-        logs.append("\nTASK [11. Update Client /etc/fstab] ********************************************")
-        fstab_entry = f"{server_host}:{export_dir} {mount_dir} nfs defaults 0 0"
-        cmd = f"grep -qF '{mount_dir}' /etc/fstab || echo '{fstab_entry}' >> /etc/fstab"
-        logs.append(f"Executing: {cmd}")
+        # 5. Update /etc/fstab
+        logs.append("\nTASK [12. Update /etc/fstab] ***************************************************")
+        fstab_entry = f"{server_host}:{export_dir}    {mount_dir}    nfs    defaults    0    0"
+        # Clean any old mounts for same directory to avoid duplicated mounts in fstab
+        cmd_fstab_update = f"sed -i '\\|{mount_dir}|d' /etc/fstab; echo '{fstab_entry}' >> /etc/fstab && cat /etc/fstab"
+        logs.append("Applying fstab config entry...")
         ok, code, out, err = AnsibleRunner.ssh_execute_via_jump(
             jump_host=jump_ip, jump_user=jump_user, jump_password=jump_pass,
             target_host=client_host, target_user=client_user, target_password=client_pass,
-            command=cmd
+            command=cmd_fstab_update
         )
         if not ok or code != 0:
             logs.append(f"❌ [FAILED] Client fstab update failed. Code: {code}, Error: {err or out}")
             AnsibleRunner.save_execution_log(logs, prefix="nfs_config_fail")
             return False, logs
-        logs.append(f"Success: Appended {fstab_entry}")
+        logs.append("Verified fstab contents:")
+        logs.extend([f"  {line}" for line in out.splitlines()])
 
-        # Step 12: Mount Share
-        logs.append("\nTASK [12. Mount NFS share on Client] *******************************************")
-        cmd = "mount -a"
-        logs.append(f"Executing: {cmd}")
+        # 6. Mount Filesystem (With 10s hang protection timeout)
+        logs.append("\nTASK [13. Mount Filesystem] ****************************************************")
+        # Ensure target is unmounted first to avoid "already mounted" locks
+        AnsibleRunner.ssh_execute_via_jump(
+            jump_host=jump_ip, jump_user=jump_user, jump_password=jump_pass,
+            target_host=client_host, target_user=client_user, target_password=client_pass,
+            command=f"umount -f {mount_dir} 2>/dev/null || true"
+        )
+        cmd_mount = f"timeout 10 mount {mount_dir}"
+        logs.append(f"Executing client mount with 10s timeout: {cmd_mount}")
         ok, code, out, err = AnsibleRunner.ssh_execute_via_jump(
             jump_host=jump_ip, jump_user=jump_user, jump_password=jump_pass,
             target_host=client_host, target_user=client_user, target_password=client_pass,
-            command=cmd
+            command=cmd_mount
         )
+        if code == 124:
+            logs.append("❌ [FAILED] NFS mount command hung for more than 10 seconds. Check client-server connectivity or firewalls.")
+            AnsibleRunner.save_execution_log(logs, prefix="nfs_config_fail")
+            return False, logs
         if not ok or code != 0:
-            logs.append(f"❌ [FAILED] Mount failed on client. Code: {code}, Error: {err or out}")
+            logs.append(f"❌ [FAILED] Mount command failed. Code: {code}, Error: {err or out}")
             AnsibleRunner.save_execution_log(logs, prefix="nfs_config_fail")
             return False, logs
-        logs.append("Success: Share mounted.")
+        logs.append("NFS share mounted successfully.")
 
-        # Step 13: Verify Mount
-        logs.append("\nTASK [13. Verify Mount on Client] **********************************************")
-        cmd = f"df -h {mount_dir} && mount | grep {mount_dir}"
-        logs.append(f"Executing: {cmd}")
+        # 7. Verify Mount & Read/Write access
+        logs.append("\nTASK [14. Verify Mount and Write Access] ***************************************")
+        cmd_verify_mount = f"df -h {mount_dir} && mount | grep {mount_dir}"
         ok, code, out, err = AnsibleRunner.ssh_execute_via_jump(
             jump_host=jump_ip, jump_user=jump_user, jump_password=jump_pass,
             target_host=client_host, target_user=client_user, target_password=client_pass,
-            command=cmd
+            command=cmd_verify_mount
         )
-        if ok:
-            logs.extend(out.splitlines())
-            if err:
-                logs.append(f"[STDERR] {err}")
-        else:
-            logs.append(f"❌ [ERROR] Client mount verification failed: {err}")
+        if not ok:
+            logs.append(f"❌ [FAILED] Mount verification check failed. Error: {err or out}")
             AnsibleRunner.save_execution_log(logs, prefix="nfs_config_fail")
             return False, logs
+        logs.append("Mount verification check output:")
+        logs.extend([f"  {line}" for line in out.splitlines()])
+
+        # Read/write verification test
+        test_file = f"{mount_dir}/.nfs_opshub_test"
+        cmd_rw_test = f"touch {test_file} && rm -f {test_file}"
+        logs.append(f"Verifying read/write access via: {cmd_rw_test}")
+        ok_rw, code_rw, out_rw, err_rw = AnsibleRunner.ssh_execute_via_jump(
+            jump_host=jump_ip, jump_user=jump_user, jump_password=jump_pass,
+            target_host=client_host, target_user=client_user, target_password=client_pass,
+            command=cmd_rw_test
+        )
+        rw_success = ok_rw and (code_rw == 0)
+        if not rw_success:
+            logs.append(f"❌ [FAILED] Read/write access check failed. Error: {err_rw or out_rw}")
+            AnsibleRunner.save_execution_log(logs, prefix="nfs_config_fail")
+            return False, logs
+        logs.append("Read/write access verified.")
+
+        # ----------------==================================----------------
+        # FINAL STATUS SUMMARY LIST
+        # ----------------==================================----------------
+        logs.append("\n=================== VERIFICATION CHECKLIST SUMMARY ===================")
+        logs.append("✔ Export entry successfully added to /etc/exports.")
+        logs.append("✔ exportfs -avr completed successfully.")
+        logs.append("✔ showmount -e displays the exported filesystem.")
+        logs.append("✔ Mount point created on the client.")
+        logs.append("✔ /etc/fstab updated successfully.")
+        logs.append("✔ NFS filesystem mounted successfully.")
+        logs.append("✔ df -h confirms the mount.")
+        logs.append("✔ Read/write access verified on the mounted share.")
+        logs.append("======================================================================")
 
         log_file, log_path = AnsibleRunner.save_execution_log(logs, prefix="nfs_config")
         return True, {

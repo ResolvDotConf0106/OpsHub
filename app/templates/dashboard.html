@@ -85,7 +85,7 @@
                     <div>
                         <div class="d-flex align-items-center justify-content-between mb-2">
                             <div class="d-flex align-items-center gap-2">
-                                <span class="pulse-dot online"></span>
+                                <span class="pulse-dot {% if pod.is_online %}online{% else %}offline{% endif %}"></span>
                                 <h5 class="fw-bold text-white mb-0">{{ pod.name }}</h5>
                             </div>
                             <span class="badge badge-cyan">POD #0{{ pod.id }}</span>
@@ -152,6 +152,33 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+    function pollDashboardUpdates() {
+        fetch('/api/dashboard/running_jobs')
+            .then(r => r.json())
+            .then(data => {
+                const runningCountEl = document.querySelector('.metric-icon-wrapper.metric-icon-amber').closest('.glass-card').querySelector('h2');
+                if (runningCountEl) {
+                    runningCountEl.textContent = data.running_jobs;
+                }
+                const activityContainer = document.querySelector('.glass-card .d-flex.flex-column.gap-3');
+                if (activityContainer && data.recent_activities) {
+                    activityContainer.innerHTML = data.recent_activities.map(act => `
+                        <div class="p-3 rounded-3" style="background: #f8fafc; border: 1px solid #e2e8f0;">
+                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                <span class="badge badge-emerald extra-small"><i class="bi bi-check-lg me-1"></i> Success</span>
+                                <span class="text-secondary extra-small" style="font-size: 0.75rem;">${act.time}</span>
+                            </div>
+                            <div class="fw-semibold small mt-2 font-monospace" style="color: #0f172a;">${act.event}</div>
+                        </div>
+                    `).join('');
+                }
+            })
+            .catch(err => console.warn('Dashboard updates poll failed:', err));
+    }
+
+    setInterval(pollDashboardUpdates, 5000);
+    pollDashboardUpdates();
+
     const canvas = document.getElementById('starfield');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');

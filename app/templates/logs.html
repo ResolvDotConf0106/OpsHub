@@ -10,11 +10,6 @@
         <h3 class="fw-bold text-white mb-1">Terminal Execution Logs</h3>
         <p class="text-muted small mb-0">Persistent audit logs from SSH proxy connections, ad-hoc commands, and playbooks.</p>
     </div>
-    <div class="d-flex gap-2">
-        <button class="btn btn-glass btn-sm" onclick="clearLogs()">
-            <i class="bi bi-trash me-1"></i> Clear View
-        </button>
-    </div>
 </div>
 
 <!-- Saved Execution Logs Archive -->
@@ -38,163 +33,64 @@
     <div class="row g-3" id="savedLogsGrid">
         {% for log_file in saved_files %}
         <div class="col-md-6 col-lg-4 log-file-card" data-filename="{{ log_file.filename }}" data-mtime="{{ log_file.mtime }}" data-size="{{ log_file.size_kb }}">
-            <div class="glass-card p-3 d-flex align-items-center justify-content-between {% if log_file.filename == current_loaded_file or (not current_loaded_file and loop.first) %}border-highlight{% endif %}" style="transition: all 0.2s;">
-                <div class="d-flex align-items-center gap-3">
-                    <div class="brand-icon rounded-3" style="width: 36px; height: 36px; font-size: 16px;">
+            <div class="glass-card p-3 d-flex align-items-center justify-content-between" style="transition: all 0.2s;">
+                <div class="d-flex align-items-center gap-3" style="min-width: 0; flex-grow: 1;">
+                    <div class="brand-icon rounded-3" style="width: 36px; height: 36px; font-size: 16px; flex-shrink: 0;">
                         <i class="bi bi-journal-text"></i>
                     </div>
-                    <div>
-                        <a href="{{ url_for('main.logs', file=log_file.filename) }}" class="fw-bold text-white font-monospace extra-small text-truncate d-block text-decoration-none" style="max-width: 150px;" title="View Log in Console">
+                    <div style="min-width: 0; flex-grow: 1;">
+                        <span class="fw-bold text-white font-monospace extra-small text-truncate d-block" title="{{ log_file.filename }}">
                             {{ log_file.filename }}
-                        </a>
+                        </span>
                         <span class="text-muted extra-small" style="font-size: 0.75rem;">{{ log_file.mtime }} • {{ log_file.size_kb }} KB</span>
                     </div>
                 </div>
-                <div class="d-flex gap-2">
-                    <a href="{{ url_for('main.logs', file=log_file.filename) }}" class="btn btn-glass btn-sm text-secondary" title="View in Console">
-                        <i class="bi bi-eye"></i>
-                    </a>
+                <div class="d-flex gap-2 ms-2" style="flex-shrink: 0;">
                     <a href="/api/download_log/{{ log_file.filename }}" class="btn btn-glass btn-sm text-secondary" title="Download Log File">
                         <i class="bi bi-download"></i>
                     </a>
+                    {% if session['user'] and session['user'].role in ['Admin', 'Administrator'] %}
+                    <button class="btn btn-glass btn-sm text-danger" onclick="deleteLogFile('{{ log_file.filename }}')" title="Delete Log File">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                    {% endif %}
                 </div>
             </div>
         </div>
         {% endfor %}
     </div>
+</div>
+{% else %}
+<div class="glass-card p-5 text-center text-muted">
+    <i class="bi bi-folder-x display-1 text-cyan mb-3"></i>
+    <h5>No saved execution logs found.</h5>
+    <p class="small mb-0">Perform VM execution operations to generate log files.</p>
 </div>
 {% endif %}
-
-<!-- Log Filter Bar -->
-<div class="glass-card p-3 mb-4">
-    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-        <div class="d-flex align-items-center gap-3 flex-wrap">
-            <div class="d-flex align-items-center gap-2">
-                <span class="text-muted small fw-semibold">Filter Level:</span>
-                <div class="btn-group btn-group-sm">
-                    <button class="btn btn-glass active" onclick="filterLogs('ALL', this)">ALL</button>
-                    <button class="btn btn-glass text-cyan" onclick="filterLogs('INFO', this)">INFO</button>
-                    <button class="btn btn-glass text-emerald" onclick="filterLogs('SUCCESS', this)">SUCCESS</button>
-                    <button class="btn btn-glass text-amber" onclick="filterLogs('WARN', this)">WARN</button>
-                    <button class="btn btn-glass text-rose" onclick="filterLogs('ERROR', this)">ERROR</button>
-                </div>
-            </div>
-            
-            <div class="d-flex align-items-center gap-2">
-                <span class="text-muted small fw-semibold">Console Order:</span>
-                <div class="btn-group btn-group-sm">
-                    <button class="btn btn-glass active" id="btnSortOldest" onclick="sortConsoleLogs('asc')"><i class="bi bi-sort-down me-1"></i>Oldest First</button>
-                    <button class="btn btn-glass text-secondary" id="btnSortNewest" onclick="sortConsoleLogs('desc')"><i class="bi bi-sort-up me-1"></i>Newest First</button>
-                </div>
-            </div>
-        </div>
-
-        <div class="position-relative" style="width: 280px;">
-            <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
-            <input type="text" class="form-control form-control-dark form-control-sm ps-5" placeholder="Filter console text..." id="logSearch" onkeyup="searchLogs()">
-        </div>
-    </div>
-</div>
-
-<!-- High-Tech Terminal Window -->
-<div class="terminal-window">
-    <div class="terminal-header">
-        <div class="d-flex align-items-center gap-3">
-            <div class="terminal-dots">
-                <div class="terminal-dot dot-red"></div>
-                <div class="terminal-dot dot-yellow"></div>
-                <div class="terminal-dot dot-green"></div>
-            </div>
-            <span class="text-muted small font-monospace"><i class="bi bi-hdd-network me-1"></i> OpsHub Log Stream</span>
-        </div>
-        <span class="badge badge-emerald"><i class="bi bi-broadcast me-1"></i> LIVE STREAM</span>
-    </div>
-
-    <div class="terminal-body" id="logStreamContainer">
-        {% for log in logs %}
-        <div class="log-line log-item" data-level="{{ log.level }}" data-time="{{ log.timestamp_raw }}">
-            <span class="log-time">[{{ log.time }}]</span>
-            <span class="font-monospace fw-bold 
-                {% if log.level == 'SUCCESS' %}log-success
-                {% elif log.level == 'WARN' %}log-warn
-                {% elif log.level == 'ERROR' %}log-error
-                {% else %}log-info{% endif %}" style="min-width: 70px;">
-                [{{ log.level }}]
-            </span>
-            <span class="text-muted font-monospace text-truncate" style="max-width: 140px;">[{{ log.source }}]</span>
-            <span class="text-white font-monospace log-msg">{{ log.message }}</span>
-        </div>
-        {% endfor %}
-    </div>
-</div>
 
 {% endblock %}
 
 {% block scripts %}
 <script>
-let currentLevelFilter = 'ALL';
-
-function filterLogs(level, btn) {
-    currentLevelFilter = level;
-    
-    // Toggle active state for level buttons
-    const buttons = btn.parentNode.querySelectorAll('.btn');
-    buttons.forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    
-    applyConsoleFilters();
-}
-
-function searchLogs() {
-    applyConsoleFilters();
-}
-
-function applyConsoleFilters() {
-    const query = document.getElementById('logSearch').value.toLowerCase();
-    const items = document.querySelectorAll('.log-item');
-    
-    items.forEach(item => {
-        const level = item.dataset.level;
-        const text = item.innerText.toLowerCase();
-        
-        const matchesLevel = (currentLevelFilter === 'ALL' || level === currentLevelFilter);
-        const matchesSearch = text.includes(query);
-        
-        if (matchesLevel && matchesSearch) {
-            item.style.display = 'flex';
-        } else {
-            item.style.display = 'none';
-        }
-    });
-}
-
-function sortConsoleLogs(order) {
-    const container = document.getElementById('logStreamContainer');
-    const items = Array.from(container.querySelectorAll('.log-item'));
-    
-    // Toggle active state
-    const btnOldest = document.getElementById('btnSortOldest');
-    const btnNewest = document.getElementById('btnSortNewest');
-    
-    if (order === 'asc') {
-        btnOldest.classList.add('active');
-        btnOldest.classList.remove('text-secondary');
-        btnNewest.classList.remove('active');
-        btnNewest.classList.add('text-secondary');
-    } else {
-        btnNewest.classList.add('active');
-        btnNewest.classList.remove('text-secondary');
-        btnOldest.classList.remove('active');
-        btnOldest.classList.add('text-secondary');
+async function deleteLogFile(filename) {
+    if (!confirm(`Are you sure you want to permanently delete the log file '${filename}'?`)) {
+        return;
     }
     
-    items.sort((a, b) => {
-        const timeA = a.dataset.time || '';
-        const timeB = b.dataset.time || '';
-        return order === 'asc' ? timeA.localeCompare(timeB) : timeB.localeCompare(timeA);
-    });
-    
-    items.forEach(item => container.appendChild(item));
+    try {
+        const res = await fetch(`/api/delete_log/${filename}`, {
+            method: 'POST'
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert('Log file deleted successfully.');
+            location.reload();
+        } else {
+            alert('Failed to delete log file: ' + data.error);
+        }
+    } catch (e) {
+        alert('An error occurred while deleting the log file.');
+    }
 }
 
 function sortSavedFiles() {
@@ -222,10 +118,6 @@ function sortSavedFiles() {
     });
     
     cards.forEach(card => grid.appendChild(card));
-}
-
-function clearLogs() {
-    document.getElementById('logStreamContainer').innerHTML = '<div class="text-muted font-monospace small">[Console view cleared]</div>';
 }
 </script>
 {% endblock %}
